@@ -148,19 +148,29 @@ export function classifyVscodeEntry(entryValue) {
   if (sig.isC2Host(hay)) return { bad: true, reason: "references a known PolinRider C2 host" };
   if (sig.isFetchToShell(hay))
     return { bad: true, reason: "fetches a remote script and pipes it to a shell" };
-  if (entryValue?.runOptions?.runOn === "folderOpen" && sig.ANY_URL_RE.test(hay)) {
-    return { bad: true, reason: "auto-runs on folderOpen and contacts an external URL" };
+  if (sig.commandExecutesAsset(hay))
+    return { bad: true, reason: "executes a font/asset file as code (e.g. `node ./public/fonts/…`)" };
+  if (entryValue?.runOptions?.runOn === "folderOpen") {
+    if (sig.ANY_URL_RE.test(hay))
+      return { bad: true, reason: "auto-runs on folderOpen and contacts an external URL" };
+    if (sig.INTERPRETER_RE.test(hay))
+      return { bad: true, reason: "auto-runs a script interpreter on folderOpen" };
   }
   return { bad: false };
 }
 
 async function detectVscode(repoDir, findings, rel) {
+  const vscodeDir = path.join(repoDir, ".vscode");
+  if (!existsSync(vscodeDir)) return;
+
   const targets = [
     { name: "tasks.json", arrayKey: "tasks" },
     { name: "launch.json", arrayKey: "configurations" },
   ];
+  const reasons = new Set();
+
   for (const { name, arrayKey } of targets) {
-    const file = path.join(repoDir, ".vscode", name);
+    const file = path.join(vscodeDir, name);
     if (!existsSync(file)) continue;
     let text;
     try {
@@ -170,50 +180,53 @@ async function detectVscode(repoDir, findings, rel) {
     }
     const parsed = parseJsonc(text);
     if (!parsed.ok) {
-      // Can't parse → can't surgically edit. Flag only if it smells malicious.
-      if (sig.isC2Host(text) || sig.isFetchToShell(text)) {
-        findings.push({
-          id: `vscode.unparseable.${arrayKey}`,
-          category: "vscode",
-          file: rel(file),
-          confidence: "high",
-          action: "manual-review",
-          contentConfirmed: true,
-          description: `Malicious-looking content in an unparseable ${name} — review and remove manually`,
-        });
+      // Can't parse → fall back to scanning the raw text for malicious markers.
+      if (sig.isC2Host(text) || sig.isFetchToShell(text) || sig.commandExecutesAsset(text)) {
+        reasons.add(`malicious content in ${name}`);
       }
       continue;
     }
     const arr = Array.isArray(parsed.value?.[arrayKey]) ? parsed.value[arrayKey] : [];
-    const badIndices = [];
-    arr.forEach((entry, idx) => {
-      if (classifyVscodeEntry(entry).bad) badIndices.push(idx);
-    });
-    if (badIndices.length === 0) continue;
-    const reasons = [...new Set(badIndices.map((i) => classifyVscodeEntry(arr[i]).reason))];
-    const noun = arrayKey === "configurations" ? "launch configuration" : "task";
-    const plural = badIndices.length === 1 ? noun : `${noun}s`;
-    findings.push({
-      id: `vscode.${arrayKey}`,
-      category: "vscode",
-      file: rel(file),
-      confidence: "high",
-      action: "edit-vscode",
-      contentConfirmed: true,
-      description: `${badIndices.length} malicious ${plural} (${reasons.join("; ")})`,
-      edit: { absPath: file, arrayKey, indices: badIndices, total: arr.length },
-    });
+    for (const entry of arr) {
+      const c = classifyVscodeEntry(entry);
+      if (c.bad) reasons.add(`${name}: ${c.reason}`);
+    }
   }
+
+  if (reasons.size === 0) return;
+  // Policy: any malicious .vscode entry → remove the entire .vscode directory.
+  findings.push({
+    id: "vscode.malicious",
+    category: "vscode",
+    file: ".vscode",
+    confidence: "high",
+    action: "remove-dir",
+    contentConfirmed: true,
+    description: `Malicious .vscode configuration (${[...reasons].join("; ")}) — removing the entire .vscode directory`,
+    edit: { absPath: vscodeDir },
+  });
 }
 
 // ─── Font payload carriers ───────────────────────────────────────────────────────
+
+/** Map a font file to the fonts directory that should be removed wholesale, or null. */
+export function fontDirToRemove(repoDir, fontAbsPath) {
+  const parts = path.relative(repoDir, fontAbsPath).split(path.sep);
+  const idx = parts.lastIndexOf("fonts");
+  if (idx >= 0) return path.join(repoDir, ...parts.slice(0, idx + 1)); // .../fonts
+  return null; // not inside a fonts/ dir → caller falls back to deleting the file
+}
 
 async function detectFonts(repoDir, findings, rel) {
   const fontFiles = await collectByExtension(repoDir, sig.FONT_EXTENSIONS);
   if (fontFiles.length === 0) return;
   const haystack = await collectFontReferences(repoDir);
+
+  const dirsToRemove = new Map(); // absDir → Set<reason>
+  const orphans = []; // suspicious fonts not inside a fonts/ dir
+
   for (const file of fontFiles) {
-    if (isReferenced(haystack, file)) continue; // referenced → keep, never flag
+    if (isReferenced(haystack, file)) continue; // referenced → not a carrier
     let buf;
     try {
       buf = await fs.readFile(file);
@@ -221,7 +234,31 @@ async function detectFonts(repoDir, findings, rel) {
       continue;
     }
     const susp = looksSuspicious(buf, path.extname(file));
-    if (!susp.bad) continue; // unreferenced but a valid, inert font → keep
+    if (!susp.bad) continue; // unreferenced but a valid, inert font → leave it
+    const dir = fontDirToRemove(repoDir, file);
+    if (dir) {
+      if (!dirsToRemove.has(dir)) dirsToRemove.set(dir, new Set());
+      susp.reasons.forEach((r) => dirsToRemove.get(dir).add(r));
+    } else {
+      orphans.push({ file, reasons: susp.reasons });
+    }
+  }
+
+  // Policy: any suspicious font in a fonts/ dir → remove that whole directory.
+  for (const [dir, reasons] of dirsToRemove) {
+    findings.push({
+      id: "font.carrier-dir",
+      category: "font",
+      file: rel(dir),
+      confidence: "high",
+      action: "remove-dir",
+      contentConfirmed: true,
+      description: `Suspicious font carrier(s) found — removing the entire ${rel(dir)} directory (${[...reasons].join("; ")})`,
+      edit: { absPath: dir },
+    });
+  }
+  // Suspicious fonts not under a fonts/ dir: delete just the file (avoid nuking a broad assets dir).
+  for (const { file, reasons } of orphans) {
     findings.push({
       id: "font.carrier",
       category: "font",
@@ -229,7 +266,7 @@ async function detectFonts(repoDir, findings, rel) {
       confidence: "high",
       action: "delete-font",
       contentConfirmed: true,
-      description: `Unreferenced suspicious font: ${susp.reasons.join("; ")}`,
+      description: `Unreferenced suspicious font: ${reasons.join("; ")}`,
       edit: { absPath: file },
     });
   }
@@ -308,16 +345,17 @@ async function detectArtifacts(repoDir, findings) {
   const gitignore = path.join(repoDir, ".gitignore");
   if (existsSync(gitignore)) {
     try {
-      const lines = (await fs.readFile(gitignore, "utf8")).split(/\r?\n/);
-      if (lines.some((l) => l.trim() === sig.GITIGNORE_INJECT)) {
+      const lines = (await fs.readFile(gitignore, "utf8")).split(/\r?\n/).map((l) => l.trim());
+      const injected = sig.GITIGNORE_INJECTED.filter((p) => lines.includes(p));
+      if (injected.length) {
         findings.push({
-          id: "gitignore.config-bat",
+          id: "gitignore.injected",
           category: "gitignore",
           file: ".gitignore",
           confidence: "high",
           action: "fix-gitignore",
           contentConfirmed: true,
-          description: "`config.bat` injected into .gitignore (malware hides itself from git)",
+          description: `malware-injected .gitignore entr${injected.length === 1 ? "y" : "ies"}: ${injected.join(", ")}`,
         });
       }
     } catch {

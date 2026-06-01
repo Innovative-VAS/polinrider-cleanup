@@ -8,6 +8,7 @@ import {
   LEGIT_TASKS,
   LEGIT_LAUNCH,
   INFECTED_TASKS,
+  INFECTED_TASKS_NODE,
   ORIGINAL_PAYLOAD,
   ROTATED_PAYLOAD,
   GENERIC_PAYLOAD,
@@ -70,17 +71,27 @@ test("generic obfuscation → manual-review only, suspicious (not infected)", as
   assert.equal(f.hasContentConfirmed, false);
 });
 
-test("malicious .vscode task flagged; legit task not", async () => {
-  const repo = await makeRepo({ ".vscode/tasks.json": INFECTED_TASKS });
+test("malicious .vscode (curl|bash C2 task) → whole-dir remove finding", async () => {
+  const repo = await makeRepo({ ".vscode/tasks.json": INFECTED_TASKS, ".vscode/settings.json": "{}" });
   const f = await scanRepo(repo);
-  const finding = byId(f, "vscode.tasks");
+  const finding = byId(f, "vscode.malicious");
   assert.ok(finding, "expected vscode finding");
+  assert.equal(finding.action, "remove-dir");
   assert.equal(finding.contentConfirmed, true);
-  assert.deepEqual(finding.edit.indices, [1]); // only the curl|bash task
-  assert.equal(finding.edit.total, 2);
+  assert.match(finding.edit.absPath, /\.vscode$/);
+  assert.equal(f.severity, "infected");
 });
 
-test("unreferenced suspicious font flagged; referenced/valid font kept", async () => {
+test("malicious .vscode (node executes a font on folderOpen) → detected", async () => {
+  const repo = await makeRepo({ ".vscode/tasks.json": INFECTED_TASKS_NODE });
+  const f = await scanRepo(repo);
+  const finding = byId(f, "vscode.malicious");
+  assert.ok(finding, "the node-runs-a-font task must be detected");
+  assert.equal(finding.action, "remove-dir");
+  assert.equal(f.severity, "infected");
+});
+
+test("suspicious font in public/fonts → whole public/fonts removal", async () => {
   const repo = await makeRepo({
     "public/fonts/evil.woff2": evilFont(),
     "public/fonts/good.woff2": goodFont(),
@@ -89,19 +100,22 @@ test("unreferenced suspicious font flagged; referenced/valid font kept", async (
   const f = await scanRepo(repo);
   const fontFindings = f.findings.filter((x) => x.category === "font");
   assert.equal(fontFindings.length, 1);
-  assert.match(fontFindings[0].file, /evil\.woff2$/);
+  assert.equal(fontFindings[0].action, "remove-dir");
+  assert.match(fontFindings[0].file, /public[\\/]fonts$/);
 });
 
-test("artifacts + .gitignore injection detected", async () => {
+test("artifacts + injected .gitignore lines detected", async () => {
   const repo = await makeRepo({
     "temp_auto_push.bat": "echo malware",
     "config.bat": "echo orchestrator",
-    ".gitignore": "node_modules\nconfig.bat\n",
+    "branch_structure.json": "{}",
+    ".gitignore": "node_modules\nconfig.bat\ntemp_auto_push.bat\nbranch_structure.json\n",
   });
   const f = await scanRepo(repo);
   assert.ok(byId(f, "artifact.temp_auto_push.bat"));
   assert.ok(byId(f, "artifact.config.bat"));
-  assert.ok(byId(f, "gitignore.config-bat"));
+  assert.ok(byId(f, "artifact.branch_structure.json"));
+  assert.ok(byId(f, "gitignore.injected"));
   assert.equal(f.severity, "infected");
 });
 

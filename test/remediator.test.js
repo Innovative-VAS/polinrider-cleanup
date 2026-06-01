@@ -5,12 +5,11 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import { scanRepo } from "../src/scanner.js";
 import { remediate } from "../src/remediator.js";
-import { parseJsonc } from "../src/jsonc.js";
 import {
   makeRepo,
   cleanupAll,
   LEGIT_CONFIG,
-  INFECTED_TASKS,
+  INFECTED_TASKS_NODE,
   ORIGINAL_PAYLOAD,
   ROTATED_PAYLOAD,
   infectedConfig,
@@ -43,19 +42,17 @@ test("strips rotated payload", async () => {
   assert.ok(!out.includes("global['_V']"));
 });
 
-test("removes only the malicious .vscode task, preserving legit ones", async () => {
-  const repo = await makeRepo({ ".vscode/tasks.json": INFECTED_TASKS });
+test("removes the entire .vscode directory when a malicious task is found", async () => {
+  const repo = await makeRepo({
+    ".vscode/tasks.json": INFECTED_TASKS_NODE,
+    ".vscode/settings.json": `{ "editor.tabSize": 2 }`,
+  });
   const findings = await scanRepo(repo);
   await remediate(repo, findings, { git: noGit });
-  const out = await fs.readFile(path.join(repo, ".vscode/tasks.json"), "utf8");
-  const parsed = parseJsonc(out);
-  assert.equal(parsed.ok, true, parsed.error?.message);
-  assert.equal(parsed.value.tasks.length, 1);
-  assert.equal(parsed.value.tasks[0].label, "build");
-  assert.ok(!out.includes("vercel.app"));
+  assert.equal(existsSync(path.join(repo, ".vscode")), false, ".vscode removed entirely");
 });
 
-test("deletes the evil font but keeps the referenced good font", async () => {
+test("removes the whole public/fonts directory when a carrier is found", async () => {
   const repo = await makeRepo({
     "public/fonts/evil.woff2": evilFont(),
     "public/fonts/good.woff2": goodFont(),
@@ -63,22 +60,27 @@ test("deletes the evil font but keeps the referenced good font", async () => {
   });
   const findings = await scanRepo(repo);
   await remediate(repo, findings, { git: noGit });
-  assert.equal(existsSync(path.join(repo, "public/fonts/evil.woff2")), false);
-  assert.equal(existsSync(path.join(repo, "public/fonts/good.woff2")), true);
+  assert.equal(existsSync(path.join(repo, "public/fonts")), false, "fonts dir removed");
+  assert.equal(existsSync(path.join(repo, "public")), true, "only the fonts dir is removed");
 });
 
-test("removes artifacts and fixes .gitignore", async () => {
+test("removes artifacts and strips all injected .gitignore lines", async () => {
   const repo = await makeRepo({
     "temp_auto_push.bat": "x",
+    "temp_interactive_push.bat": "x",
     "config.bat": "x",
-    ".gitignore": "node_modules\nconfig.bat\n",
+    "branch_structure.json": "{}",
+    ".gitignore": "node_modules\nconfig.bat\ntemp_auto_push.bat\ntemp_interactive_push.bat\nbranch_structure.json\n",
   });
   const findings = await scanRepo(repo);
   await remediate(repo, findings, { git: noGit });
-  assert.equal(existsSync(path.join(repo, "temp_auto_push.bat")), false);
-  assert.equal(existsSync(path.join(repo, "config.bat")), false);
-  const gi = await fs.readFile(path.join(repo, ".gitignore"), "utf8");
-  assert.ok(!gi.split(/\r?\n/).includes("config.bat"), "config.bat removed from .gitignore");
+  for (const a of ["temp_auto_push.bat", "temp_interactive_push.bat", "config.bat", "branch_structure.json"]) {
+    assert.equal(existsSync(path.join(repo, a)), false, `${a} removed`);
+  }
+  const gi = (await fs.readFile(path.join(repo, ".gitignore"), "utf8")).split(/\r?\n/);
+  for (const inj of ["config.bat", "temp_auto_push.bat", "temp_interactive_push.bat", "branch_structure.json"]) {
+    assert.ok(!gi.includes(inj), `${inj} removed from .gitignore`);
+  }
   assert.ok(gi.includes(".env"), ".env pattern ensured");
 });
 

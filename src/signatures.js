@@ -109,6 +109,15 @@ export const PIPE_SHELL_RES = [
 
 export const ANY_URL_RE = /https?:\/\/[^\s"'`)]+/i;
 
+// A raw script interpreter (as opposed to a package-manager wrapper like npm).
+export const INTERPRETER_RE =
+  /\b(?:node|deno|bun|python3?|ruby|php|osascript|bash|sh|zsh|dash|pwsh|powershell|cmd)\b/i;
+
+// Running an interpreter against an asset/font path — never legitimate. This is
+// the real PolinRider .vscode vector: a folderOpen task does `node ./public/fonts/x.woff2`.
+export const ASSET_EXEC_RE =
+  /(?:public[\\/]+fonts|[\\/]fonts[\\/]|\bstatic[\\/]|\bassets[\\/])|\.(?:woff2?|ttf|eot|otf)\b/i;
+
 // ─── Font payload carrier ──────────────────────────────────────────────────────
 //
 // A font dropped into public/fonts that no CSS/HTML/JS references AND whose
@@ -179,9 +188,16 @@ export const ARTIFACT_FILES = [
   "temp_auto_push.bat",
   "temp_interactive_push.bat",
   "config.bat",
+  "branch_structure.json",
 ];
 
-export const GITIGNORE_INJECT = "config.bat";
+// Lines PolinRider injects into .gitignore to hide its own artifacts from git.
+export const GITIGNORE_INJECTED = [
+  "config.bat",
+  "temp_auto_push.bat",
+  "temp_interactive_push.bat",
+  "branch_structure.json",
+];
 
 export const ENV_PATTERNS = [
   ".env",
@@ -206,4 +222,10 @@ export function isFetchToShell(text) {
   const fetches = NET_FETCH_RES.some((re) => re.test(text)) || ANY_URL_RE.test(text);
   const pipes = PIPE_SHELL_RES.some((re) => re.test(text));
   return fetches && pipes;
+}
+
+/** True if `text` runs a script interpreter against a font/asset path (e.g. `node ./public/fonts/x.woff2`). */
+export function commandExecutesAsset(text) {
+  if (typeof text !== "string") return false;
+  return INTERPRETER_RE.test(text) && ASSET_EXEC_RE.test(text);
 }

@@ -10,11 +10,11 @@ For each repo in your org:
 1. **Clones** the default branch (shallow, `--depth=1`, git hooks disabled)
 2. **Scans in-process** — reads files as inert text/bytes and pattern-matches known PolinRider signatures. It **never executes** the files it scans (see [Runtime hardening](#runtime-hardening)). Detection is *content-confirmed*: a repo is marked infected only when a real signature matches.
 3. **Surgically remediates** infected repos — removing only what is confirmed malicious and preserving legitimate code, tasks, fonts, and configs:
-   - **Strips** the appended obfuscated payload (original + rotated variants) from any `.js/.ts/.mjs` file (config files, `App.js`, …), keeping everything before the payload byte-for-byte
-   - **Removes only the malicious entries** from `.vscode/tasks.json` / `launch.json` (the `curl … | bash`, `runOn: folderOpen`, C2-host tasks), keeping legitimate build/debug tasks; deletes the file only if it was entirely malicious
-   - **Deletes** font carriers in `public/fonts` / `static` that are unreferenced *and* don't look like real fonts — keeping referenced, valid fonts
-   - **Deletes** `temp_auto_push.bat`, `temp_interactive_push.bat`, `config.bat`
-   - **Fixes** `.gitignore` (removes injected `config.bat`, re-adds `.env*` patterns) and untracks committed `.env` files
+   - **Strips** the appended obfuscated payload (original + rotated variants) from any `.js/.ts/.mjs` file (config files, `App.js`, `vite.config.js`, …), keeping everything before the payload byte-for-byte
+   - **Removes the entire `.vscode` directory** when any task/launch entry is malicious — `curl … | bash`, `runOn: folderOpen` auto-runs, C2 hosts, or running an interpreter against a font/asset (e.g. `node ./public/fonts/x.woff2`)
+   - **Removes the entire fonts directory** (e.g. `public/fonts`) when it contains a carrier font that is unreferenced *and* doesn't look like a real font
+   - **Deletes** `temp_auto_push.bat`, `temp_interactive_push.bat`, `config.bat`, `branch_structure.json`
+   - **Fixes** `.gitignore` (removes all injected lines — `config.bat`, `temp_*.bat`, `branch_structure.json` — re-adds `.env*` patterns) and untracks committed `.env` files
    - **Flags for manual review** (never auto-edits): impostor npm dependencies, fetch-and-exec lifecycle scripts, and unknown-but-obfuscated appended code
 4. **Opens a PR** on a new branch with a precise summary of every change — your branch protection rules apply, nothing merges automatically
 

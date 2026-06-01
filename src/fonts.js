@@ -12,8 +12,12 @@
 
 import fs from "node:fs/promises";
 import path from "node:path";
-import { collectByExtension } from "./walk.js";
+import { collectByExtension, DEFAULT_EXCLUDE } from "./walk.js";
 import { FONT_MAGIC, FONT_BADNESS_RES, FONT_REF_EXTENSIONS } from "./signatures.js";
+
+// A reference inside .vscode (e.g. a malicious task pointing at its payload font)
+// must NOT count as legitimate usage.
+const REF_EXCLUDE = new Set([...DEFAULT_EXCLUDE, ".vscode"]);
 
 const NO_RELIABLE_MAGIC = new Set([".eot"]); // EOT lacks a single stable magic
 const BYTE_SCAN_LIMIT = 256 * 1024; // scan at most 256 KB for embedded strings
@@ -59,7 +63,7 @@ export function looksSuspicious(buf, ext = "") {
  * than wrongly delete a legitimate, referenced font).
  */
 export async function collectFontReferences(repoDir) {
-  const files = await collectByExtension(repoDir, FONT_REF_EXTENSIONS);
+  const files = await collectByExtension(repoDir, FONT_REF_EXTENSIONS, { exclude: REF_EXCLUDE });
   let haystack = "";
   for (const f of files) {
     if (haystack.length > REF_HAYSTACK_LIMIT) break;

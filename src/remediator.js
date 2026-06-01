@@ -20,8 +20,7 @@ import fs from "node:fs/promises";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import * as sig from "./signatures.js";
-import { parseJsonc, getMember, removeArrayElements } from "./jsonc.js";
-import { classifyVscodeEntry, locatePayloadOffset } from "./scanner.js";
+import { locatePayloadOffset } from "./scanner.js";
 import { safeGit } from "./safe-exec.js";
 
 /**
@@ -47,8 +46,8 @@ export async function remediate(repoDir, findings, opts = {}) {
       case "strip-js-payload":
         await stripJsPayload(repoDir, f, result, dryRun);
         break;
-      case "edit-vscode":
-        await editVscode(f, result, dryRun);
+      case "remove-dir":
+        await deleteDir(f, result, dryRun);
         break;
       case "delete-font":
       case "remove-artifact":
@@ -110,41 +109,17 @@ async function stripJsPayload(repoDir, f, result, dryRun) {
   recordModified(result, f.file);
 }
 
-// ─── edit-vscode ───────────────────────────────────────────────────────────────
+// ─── remove-dir (whole .vscode / fonts directory) ───────────────────────────────
 
-async function editVscode(f, result, dryRun) {
-  const { absPath, arrayKey } = f.edit ?? {};
+async function deleteDir(f, result, dryRun) {
+  const absPath = f.edit?.absPath;
   if (!absPath || !existsSync(absPath)) {
-    result.skipped.push({ finding: f, reason: "file missing" });
+    result.skipped.push({ finding: f, reason: "already gone" });
     return;
   }
-  const text = await fs.readFile(absPath, "utf8");
-  const parsed = parseJsonc(text);
-  const arrNode = parsed.ok ? getMember(parsed.ast, arrayKey) : undefined;
-  if (!parsed.ok || !arrNode || arrNode.type !== "array") {
-    result.skipped.push({ finding: f, reason: "unparseable at apply time — review manually" });
-    return;
-  }
-  // Recompute malicious indices from current content for self-consistency.
-  const arr = Array.isArray(parsed.value[arrayKey]) ? parsed.value[arrayKey] : [];
-  const badIdx = [];
-  arr.forEach((entry, i) => {
-    if (classifyVscodeEntry(entry).bad) badIdx.push(i);
-  });
-  if (badIdx.length === 0) {
-    result.skipped.push({ finding: f, reason: "no malicious entries on re-check" });
-    return;
-  }
-  if (badIdx.length === arrNode.elements.length) {
-    if (!dryRun) await fs.rm(absPath, { force: true });
-    result.applied.push(f);
-    recordDeleted(result, f.file);
-    return;
-  }
-  const edited = removeArrayElements(text, arrNode, badIdx);
-  if (!dryRun) await fs.writeFile(absPath, edited, "utf8");
+  if (!dryRun) await fs.rm(absPath, { recursive: true, force: true });
   result.applied.push(f);
-  recordModified(result, f.file);
+  recordDeleted(result, f.file);
 }
 
 // ─── delete-font / remove-artifact ───────────────────────────────────────────────
@@ -173,8 +148,8 @@ async function hardenGitignore(repoDir, result, dryRun) {
   let lines = content.length ? content.split(/\r?\n/) : [];
   const original = lines.join("\n");
 
-  // 1. Remove the injected config.bat line(s).
-  lines = lines.filter((l) => l.trim() !== sig.GITIGNORE_INJECT);
+  // 1. Remove every malware-injected line (config.bat, temp_*.bat, branch_structure.json).
+  lines = lines.filter((l) => !sig.GITIGNORE_INJECTED.includes(l.trim()));
   // 2. Ensure standard .env patterns are ignored (malware removes them to expose secrets).
   const present = new Set(lines.map((l) => l.trim()));
   for (const pat of sig.ENV_PATTERNS) {
@@ -191,9 +166,9 @@ async function hardenGitignore(repoDir, result, dryRun) {
   }
   recordModified(result, ".gitignore");
   result.notes.push(
-    dryRun
-      ? "would remove config.bat from .gitignore and ensure .env patterns are ignored"
-      : "removed config.bat from .gitignore and ensured .env patterns are ignored",
+    `${dryRun ? "would remove" : "removed"} malware-injected entries from .gitignore and ensure${
+      dryRun ? "" : "d"
+    } .env patterns are ignored`,
   );
 }
 
