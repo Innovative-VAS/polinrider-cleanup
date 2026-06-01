@@ -1,0 +1,26 @@
+{
+  "name": "polinrider-remover",
+  "version": "2.0.0",
+  "description": "Hardened CLI that scans a GitHub org for PolinRider malware and opens surgical cleanup PRs. Reads target files as inert text only — never executes them.",
+  "type": "module",
+  "bin": {
+    "polinrider": "bin/polinrider.js"
+  },
+  "main": "src/index.js",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node bin/polinrider.js",
+    "scan": "node bin/polinrider.js",
+    "test": "node --test",
+    "test:hardened": "node --disallow-code-generation-from-strings --test"
+  },
+  "dependencies": {
+    "chalk": "^5.3.0",
+    "execa": "^9.5.2",
+    "ora": "^8.1.1"
+  },
+  "license": "MIT",
+  "private": true
+}

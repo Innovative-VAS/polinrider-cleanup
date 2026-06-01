@@ -1,0 +1,41 @@
+services:
+  polinrider-cleanup:
+    build: .
+    image: polinrider-cleanup:latest
+    container_name: polinrider-cleanup
+
+    environment:
+      # Pass your GitHub PAT (needs repo + org:read scopes)
+      # Set this in your shell: export GH_TOKEN=ghp_...
+      - GH_TOKEN=${GH_TOKEN}
+      - GITHUB_TOKEN=${GH_TOKEN}   # gh CLI reads either
+      - GH_ORG=${GH_ORG}           # your org name, e.g. mycompany
+      - DRY_RUN=${DRY_RUN:-false}  # set to "true" to skip PR creation
+      - GH_REPO=${GH_REPO:-}       # optional: scope to one/few repos (comma-separated) for a pilot
+
+    # Optional: mount a reports dir on the host to keep scan logs
+    volumes:
+      - ./reports:/app/reports
+
+    # No network access except github.com — drop everything else
+    # (requires Docker with custom network + external DNS)
+    # For stricter isolation remove this and use default bridge
+    network_mode: bridge
+
+    # Drop all Linux capabilities — scanner needs none
+    cap_drop:
+      - ALL
+
+    # Read-only root fs — only /workspace and /app/reports are writable
+    read_only: true
+    tmpfs:
+      - /workspace:exec,mode=1777,size=2g
+      - /tmp:mode=1777,size=128m
+      - /home/scanner:mode=755,size=64m
+
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 3G
