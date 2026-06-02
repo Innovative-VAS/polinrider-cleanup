@@ -9,7 +9,9 @@ services:
       # Set this in your shell: export GH_TOKEN=ghp_...
       - GH_TOKEN=${GH_TOKEN}
       - GITHUB_TOKEN=${GH_TOKEN}   # gh CLI reads either
-      - GH_ORG=${GH_ORG}           # your org name, e.g. mycompany
+      # Target account — set EXACTLY ONE (comment out the other):
+      - GH_ORG=${GH_ORG:-}         # an org name, e.g. mycompany
+      - GH_USER=${GH_USER:-}       # OR your personal username (scans repos you own)
       - DRY_RUN=${DRY_RUN:-false}  # set to "true" to skip PR creation
       - GH_REPO=${GH_REPO:-}       # optional: scope to one/few repos (comma-separated) for a pilot
 
