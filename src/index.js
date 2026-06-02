@@ -9,7 +9,8 @@ import "./safety.js"; // MUST be the first import — installs runtime guards.
  *   3. If infected → surgically remediate
  *   4. Commit changes on a new branch and open a PR via gh
  *
- * Required env: GH_TOKEN, GH_ORG.   Optional: DRY_RUN, WORKSPACE, BRANCH_PREFIX.
+ * Required env: GH_TOKEN, and exactly one of GH_ORG (organization) or GH_USER
+ * (personal account). Optional: DRY_RUN, WORKSPACE, BRANCH_PREFIX.
  *
  * SAFETY: every subprocess goes through src/safe-exec.js (git/gh only). No
  * target file content is ever require()'d, import()'d, eval()'d, or exec()'d.
@@ -29,7 +30,7 @@ import { hardeningStatus } from "./safety.js";
 
 // ─── Config (resolved inside main() so importing this module is side-effect-free) ─
 
-let ORG, TOKEN, DRY_RUN, WORKSPACE, BRANCH_PREFIX;
+let ACCOUNT, TOKEN, DRY_RUN, WORKSPACE, BRANCH_PREFIX;
 
 function env(name) {
   const val = process.env[name];
@@ -38,6 +39,25 @@ function env(name) {
     process.exit(2);
   }
   return val;
+}
+
+// The target account is EITHER a GitHub org (GH_ORG) or a personal user account
+// (GH_USER). Set exactly one — comment out the other in your .env. The resolved
+// `owner` is used both to list repos and to prefix bare GH_REPO entries.
+function resolveAccount() {
+  const org = (process.env.GH_ORG || "").trim();
+  const user = (process.env.GH_USER || "").trim();
+  if (org && user) {
+    console.error(chalk.red("✖ Set only one of GH_ORG or GH_USER, not both"));
+    process.exit(2);
+  }
+  if (!org && !user) {
+    console.error(
+      chalk.red("✖ Set GH_ORG (organization) or GH_USER (personal account)"),
+    );
+    process.exit(2);
+  }
+  return user ? { kind: "user", owner: user } : { kind: "org", owner: org };
 }
 
 function section(title) {
@@ -99,8 +119,9 @@ async function openPR(repoDir, fullName, findings, result) {
 // ─── Resolve target repos ──────────────────────────────────────────────────────
 //
 // Set GH_REPO (alias GH_REPOS) to a comma-separated list to scope a pilot run to
-// specific repos and skip the org-wide listing. Each entry may be "name" (the
-// configured GH_ORG is prefixed) or "owner/name". Unset → scan the whole org.
+// specific repos and skip the listing. Each entry may be "name" (the account
+// owner — GH_ORG or GH_USER — is prefixed) or "owner/name". Unset → scan every
+// repo for the configured account (org repos, or the user's owned repos).
 
 const REPO_RE = /^[\w.-]+\/[\w.-]+$/;
 
@@ -111,7 +132,7 @@ async function resolveTargetRepos() {
       .split(",")
       .map((s) => s.trim())
       .filter(Boolean)
-      .map((r) => (r.includes("/") ? r : `${ORG}/${r}`));
+      .map((r) => (r.includes("/") ? r : `${ACCOUNT.owner}/${r}`));
     const invalid = repos.filter((r) => !REPO_RE.test(r));
     if (invalid.length) {
       console.error(chalk.red(`✖ Invalid repo name(s) in GH_REPO: ${invalid.join(", ")}`));
@@ -123,10 +144,18 @@ async function resolveTargetRepos() {
     return repos;
   }
 
-  const spinner = ora(`Fetching repos for org: ${chalk.bold(ORG)}`).start();
-  const list = await safeGh(["api", `orgs/${ORG}/repos`, "--paginate", "--jq", ".[].full_name"]);
+  const spinner = ora(
+    `Fetching repos for ${ACCOUNT.kind}: ${chalk.bold(ACCOUNT.owner)}`,
+  ).start();
+  // Org → all repos in the org. User → repos OWNED by the authenticated user
+  // (affiliation=owner excludes repos you're only a collaborator/org member on).
+  const endpoint =
+    ACCOUNT.kind === "org"
+      ? `orgs/${ACCOUNT.owner}/repos`
+      : "user/repos?affiliation=owner";
+  const list = await safeGh(["api", endpoint, "--paginate", "--jq", ".[].full_name"]);
   if (list.exitCode !== 0) {
-    spinner.fail("Failed to list org repos");
+    spinner.fail(`Failed to list ${ACCOUNT.kind} repos`);
     console.error(list.stderr);
     process.exit(2);
   }
@@ -138,7 +167,7 @@ async function resolveTargetRepos() {
 // ─── Main ──────────────────────────────────────────────────────────────────────
 
 export async function main() {
-  ORG = env("GH_ORG");
+  ACCOUNT = resolveAccount();
   TOKEN = env("GH_TOKEN");
   DRY_RUN = process.env.DRY_RUN === "true";
   WORKSPACE = process.env.WORKSPACE || "/workspace";

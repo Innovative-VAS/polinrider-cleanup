@@ -48,7 +48,8 @@ Edit `.env`:
 
 ```env
 GH_TOKEN=ghp_xxxxxxxxxxxxxxxxxxxx
-GH_ORG=your-org-name
+GH_ORG=your-org-name      # an organization…
+# GH_USER=your-username   # …OR a personal account (set exactly one)
 DRY_RUN=false
 ```
 
@@ -137,11 +138,14 @@ npm run test:hardened
 | Env var | Default | Description |
 |---|---|---|
 | `GH_TOKEN` | required | GitHub PAT |
-| `GH_ORG` | required | Org name |
-| `GH_REPO` | _(all repos)_ | Scope to specific repo(s), comma-separated. Each is `name` (org prefixed) or `owner/name`. Skips the org-wide listing — use it to pilot one repo first. |
+| `GH_ORG` | required\* | Organization name. Scans every repo in the org. |
+| `GH_USER` | required\* | Personal username. Scans every repo you own (`affiliation=owner`). |
+| `GH_REPO` | _(all repos)_ | Scope to specific repo(s), comma-separated. Each is `name` (account owner prefixed) or `owner/name`. Skips the account-wide listing — use it to pilot one repo first. |
 | `DRY_RUN` | `false` | Skip push and PR |
 | `WORKSPACE` | `/workspace` | Where repos are cloned |
 | `BRANCH_PREFIX` | `fix/polinrider-cleanup` | PR branch name prefix |
+
+\* Set **exactly one** of `GH_ORG` or `GH_USER` — not both, not neither.
 
 ---
 
