@@ -142,10 +142,21 @@ npm run test:hardened
 | `GH_USER` | required\* | Personal username. Scans every repo you own (`affiliation=owner`). |
 | `GH_REPO` | _(all repos)_ | Scope to specific repo(s), comma-separated. Each is `name` (account owner prefixed) or `owner/name`. Skips the account-wide listing — use it to pilot one repo first. |
 | `DRY_RUN` | `false` | Skip push and PR |
+| `AUTO_MERGE` | `false` | Auto-merge each cleanup PR after opening it. Respects branch protection (blocked PRs stay open and are reported). |
+| `MERGE_METHOD` | `squash` | Merge method when `AUTO_MERGE=true`: `squash`, `merge`, or `rebase`. |
+| `REPORTS_DIR` | `reports` | Where JSON + Markdown run reports are written. Set empty to disable. |
 | `WORKSPACE` | `/workspace` | Where repos are cloned |
 | `BRANCH_PREFIX` | `fix/polinrider-cleanup` | PR branch name prefix |
 
 \* Set **exactly one** of `GH_ORG` or `GH_USER` — not both, not neither.
+
+### Auto-merge
+
+With `AUTO_MERGE=true`, after each PR is opened the tool runs `gh pr merge --<method> --delete-branch`. It **respects branch protection** — a repo that requires reviews or passing checks is left open and listed in the summary (and report) as "auto-merge blocked"; nothing is bypassed. The token must have merge rights on the repo.
+
+### Reports
+
+Every run writes `polinrider-<timestamp>.json` + `.md` (and `latest.json` / `latest.md`) to `REPORTS_DIR` (the mounted `./reports` volume in Docker). The files are rewritten after each repo, so you get a durable, auditable trace — including each repo's findings, what was removed/cleaned, the PR link, and merge status — instead of relying on scrollback. The Markdown includes a clickable **Repository | Pull request | Status** table.
 
 ---
 

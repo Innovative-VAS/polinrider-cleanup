@@ -14,8 +14,11 @@ services:
       - GH_USER=${GH_USER:-}       # OR your personal username (scans repos you own)
       - DRY_RUN=${DRY_RUN:-false}  # set to "true" to skip PR creation
       - GH_REPO=${GH_REPO:-}       # optional: scope to one/few repos (comma-separated) for a pilot
+      - AUTO_MERGE=${AUTO_MERGE:-false}     # optional: auto-merge cleanup PRs (respects branch protection)
+      - MERGE_METHOD=${MERGE_METHOD:-squash} # squash | merge | rebase
+      - REPORTS_DIR=${REPORTS_DIR:-reports}  # JSON + Markdown run reports land here (mounted below)
 
-    # Optional: mount a reports dir on the host to keep scan logs
+    # JSON + Markdown scan/remediation reports are written here (host ./reports).
     volumes:
       - ./reports:/app/reports
 

@@ -25,12 +25,16 @@ import { fileURLToPath } from "node:url";
 import { safeGit, safeGh } from "./safe-exec.js";
 import { scanRepo } from "./scanner.js";
 import { remediate } from "./remediator.js";
-import { buildPrBody, PR_TITLE, findingLines, resultLines } from "./report.js";
+import { buildPrBody, PR_TITLE, findingLines, resultLines, buildRunJson, buildRunMarkdown } from "./report.js";
 import { hardeningStatus } from "./safety.js";
 
 // ─── Config (resolved inside main() so importing this module is side-effect-free) ─
 
 let ACCOUNT, TOKEN, DRY_RUN, WORKSPACE, BRANCH_PREFIX;
+let AUTO_MERGE, MERGE_METHOD, REPORTS_DIR, reportBase, reportStamp;
+let reportWarned = false;
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function env(name) {
   const val = process.env[name];
@@ -113,7 +117,20 @@ async function openPR(repoDir, fullName, findings, result) {
   let pr = await safeGh([...baseArgs, "--label", "security"]);
   if (pr.exitCode !== 0) pr = await safeGh(baseArgs); // retry without label (may not exist)
   if (pr.exitCode !== 0) throw new Error(`PR creation failed: ${pr.stderr}`);
-  return { url: pr.stdout.trim() };
+  const url = pr.stdout.trim();
+
+  if (!AUTO_MERGE) return { url, merged: false, mergeError: null };
+
+  // Respect branch protection: a direct merge fails where reviews/checks are
+  // required — that's reported, not bypassed. Retry once for mergeability lag.
+  const mergeArgs = ["pr", "merge", url, `--${MERGE_METHOD}`, "--delete-branch"];
+  let merge = await safeGh(mergeArgs);
+  if (merge.exitCode !== 0) {
+    await sleep(3000);
+    merge = await safeGh(mergeArgs);
+  }
+  if (merge.exitCode === 0) return { url, merged: true, mergeError: null };
+  return { url, merged: false, mergeError: (merge.stderr || merge.stdout || "merge failed").trim().split("\n")[0] };
 }
 
 // ─── Resolve target repos ──────────────────────────────────────────────────────
@@ -172,6 +189,17 @@ export async function main() {
   DRY_RUN = process.env.DRY_RUN === "true";
   WORKSPACE = process.env.WORKSPACE || "/workspace";
   BRANCH_PREFIX = process.env.BRANCH_PREFIX || "fix/polinrider-cleanup";
+  AUTO_MERGE = process.env.AUTO_MERGE === "true";
+  MERGE_METHOD = (process.env.MERGE_METHOD || "squash").toLowerCase();
+  if (!["squash", "merge", "rebase"].includes(MERGE_METHOD)) {
+    console.error(chalk.red(`✖ MERGE_METHOD must be squash|merge|rebase (got "${MERGE_METHOD}")`));
+    process.exit(2);
+  }
+  REPORTS_DIR = process.env.REPORTS_DIR ?? "reports"; // set empty to disable
+  reportStamp = new Date();
+  reportBase = REPORTS_DIR
+    ? path.join(REPORTS_DIR, `polinrider-${reportStamp.toISOString().replace(/[:.]/g, "-")}`)
+    : null;
 
   console.log(chalk.bold.cyan("\n╔══════════════════════════════════════╗"));
   console.log(chalk.bold.cyan("║   PolinRider Org Cleanup Tool v2.0   ║"));
@@ -189,7 +217,7 @@ export async function main() {
 
   await fs.mkdir(WORKSPACE, { recursive: true });
 
-  const results = { total: 0, clean: 0, infected: 0, remediated: 0, prOpened: 0, manualOnly: 0, errors: [], prs: [] };
+  const results = { total: 0, clean: 0, infected: 0, remediated: 0, prOpened: 0, merged: 0, manualOnly: 0, errors: [], prs: [], repos: [] };
 
   const repos = await resolveTargetRepos();
   results.total = repos.length;
@@ -198,6 +226,7 @@ export async function main() {
     const repoName = fullName.split("/")[1];
     section(fullName);
     let repoDir;
+    const record = { repo: fullName, severity: null, findings: [], deleted: [], modified: [], notes: [], manualReview: [], pr: null, error: null };
     try {
       const cloneSpinner = ora("  Cloning...").start();
       repoDir = await cloneRepo(fullName);
@@ -205,6 +234,12 @@ export async function main() {
 
       const scanSpinner = ora("  Scanning...").start();
       const findings = await scanRepo(repoDir);
+      record.severity = findings.severity;
+      record.findings = findings.findings.map((f) => ({
+        file: f.file, action: f.action, confidence: f.confidence, contentConfirmed: f.contentConfirmed, description: f.description,
+      }));
+      record.manualReview = findings.manualReview;
+
       if (findings.severity !== "infected") {
         const note = findings.coPresenceAmplified ? " (suspicious file layout — no confirmed payload)" : "";
         scanSpinner.succeed("  " + chalk.green(`Clean — no PolinRider signatures found${note}`));
@@ -217,6 +252,9 @@ export async function main() {
 
       const remSpinner = ora("  Remediating...").start();
       const result = await remediate(repoDir, findings, { dryRun: DRY_RUN });
+      record.deleted = result.filesDeleted;
+      record.modified = result.filesModified;
+      record.notes = result.notes;
       remSpinner.succeed("  " + chalk.magenta(DRY_RUN ? "Planned remediation (dry run)" : "Remediated"));
       indent(resultLines(result));
 
@@ -234,20 +272,66 @@ export async function main() {
       if (pr.skipped) {
         prSpinner.warn(`  Skipped PR: ${pr.reason}`);
       } else {
-        prSpinner.succeed("  " + chalk.blue.bold(`PR opened: ${pr.url}`));
+        record.pr = { url: pr.url, merged: pr.merged, mergeError: pr.mergeError };
         results.prOpened++;
-        results.prs.push({ repo: fullName, url: pr.url });
+        results.prs.push({ repo: fullName, url: pr.url, merged: pr.merged });
+        if (pr.merged) {
+          results.merged++;
+          prSpinner.succeed("  " + chalk.green.bold(`PR merged: ${pr.url}`));
+        } else if (pr.mergeError) {
+          prSpinner.warn("  " + chalk.yellow(`PR opened — auto-merge blocked (${pr.mergeError}); merge manually: ${pr.url}`));
+        } else {
+          prSpinner.succeed("  " + chalk.blue.bold(`PR opened: ${pr.url}`));
+        }
       }
     } catch (err) {
       console.log("  " + chalk.red("✖ ") + chalk.bold(repoName) + " " + err.message);
+      record.error = err.message;
       results.errors.push({ repo: fullName, reason: err.message });
     } finally {
       if (repoDir) await fs.rm(repoDir, { recursive: true, force: true }).catch(() => {});
+      results.repos.push(record);
+      await writeReports(results); // rewrite after every repo → live, crash-resilient trace
     }
   }
 
+  await writeReports(results);
   printSummary(results);
   process.exit(results.infected > 0 && results.remediated < results.infected && !DRY_RUN ? 1 : 0);
+}
+
+// Persist the run report (JSON + Markdown) to REPORTS_DIR. Rewritten after every
+// repo so a trace survives even if the run is interrupted. Never fails the run.
+async function writeReports(results) {
+  if (!REPORTS_DIR || !reportBase) return;
+  const run = {
+    scannedAt: reportStamp.toISOString(),
+    scannedAtHuman: reportStamp.toString(),
+    account: { kind: ACCOUNT.kind, owner: ACCOUNT.owner },
+    dryRun: DRY_RUN,
+    autoMerge: AUTO_MERGE,
+    mergeMethod: MERGE_METHOD,
+    totals: {
+      total: results.total, clean: results.clean, infected: results.infected,
+      remediated: results.remediated, merged: results.merged, prOpened: results.prOpened,
+      manualOnly: results.manualOnly, errors: results.errors.length,
+    },
+    repos: results.repos,
+  };
+  try {
+    await fs.mkdir(REPORTS_DIR, { recursive: true });
+    const json = JSON.stringify(buildRunJson(run), null, 2);
+    const md = buildRunMarkdown(run);
+    await fs.writeFile(`${reportBase}.json`, json);
+    await fs.writeFile(`${reportBase}.md`, md);
+    await fs.writeFile(path.join(REPORTS_DIR, "latest.json"), json);
+    await fs.writeFile(path.join(REPORTS_DIR, "latest.md"), md);
+  } catch (e) {
+    if (!reportWarned) {
+      reportWarned = true;
+      console.log(chalk.yellow(`  ⚠ could not write reports to ${REPORTS_DIR}: ${e.message}`));
+    }
+  }
 }
 
 function printSummary(results) {
@@ -259,15 +343,22 @@ function printSummary(results) {
   console.log(`  ${chalk.red.bold("Infected:")}         ${results.infected}`);
   console.log(`  ${chalk.magenta.bold("Remediated:")}       ${results.remediated}`);
   console.log(`  ${chalk.blue.bold("PRs opened:")}       ${results.prOpened}`);
+  if (AUTO_MERGE) console.log(`  ${chalk.green.bold("PRs merged:")}       ${results.merged}`);
   if (results.manualOnly) console.log(`  ${chalk.yellow.bold("Manual review:")}    ${results.manualOnly}`);
 
   if (results.prs.length) {
     console.log("\n" + chalk.bold("  Pull Requests:"));
-    for (const { repo, url } of results.prs) console.log(`    ${chalk.blue("⎇")} ${chalk.bold(repo)}\n      ${url}`);
+    for (const { repo, url, merged } of results.prs) {
+      const mark = merged ? chalk.green("✔ merged") : chalk.blue("⎇ open");
+      console.log(`    ${mark} ${chalk.bold(repo)}\n      ${url}`);
+    }
   }
   if (results.errors.length) {
     console.log("\n" + chalk.yellow.bold("  Errors / needs manual review:"));
     for (const { repo, reason } of results.errors) console.log(`    ${chalk.yellow("⚠")} ${chalk.bold(repo)}: ${reason}`);
+  }
+  if (REPORTS_DIR && reportBase) {
+    console.log("\n  " + chalk.gray(`Report written: ${reportBase}.md (and latest.md / .json in ${REPORTS_DIR}/)`));
   }
   console.log(chalk.bold.cyan("══════════════════════════════════════\n"));
 }

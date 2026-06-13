@@ -6,6 +6,7 @@ node_modules/
 .env.*.local
 .env.production
 .env.development
+.DS_Store
 
 # Local clone workspace / reports
 /workspace/
