@@ -69,5 +69,5 @@ outputs:
     description: 'Path to the written SARIF report, if any.'
 
 runs:
-  using: 'node20'
+  using: 'node24'
   main: 'dist/ci.mjs'
