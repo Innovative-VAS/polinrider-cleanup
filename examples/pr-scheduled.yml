@@ -1,0 +1,23 @@
+# Scan the default branch on a schedule and open a cleanup PR if anything is
+# found. Good for fork PRs / protected branches where commit-back can't push.
+name: PolinRider weekly scan
+on:
+  schedule:
+    - cron: "0 6 * * 1" # Mondays 06:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write # create the cleanup branch
+  pull-requests: write # open the PR
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Innovative-VAS/polinrider-cleanup@v1
+        with:
+          mode: pr
+          token: ${{ secrets.GITHUB_TOKEN }}
+          # auto-merge: true        # respects branch protection
+          # merge-method: squash

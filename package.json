@@ -14,12 +14,16 @@
     "start": "node bin/polinrider.js",
     "scan": "node bin/polinrider.js",
     "test": "node --test",
-    "test:hardened": "node --disallow-code-generation-from-strings --test"
+    "test:hardened": "node --disallow-code-generation-from-strings --test",
+    "build:action": "node scripts/build-action.mjs"
   },
   "dependencies": {
     "chalk": "^5.3.0",
     "execa": "^9.5.2",
     "ora": "^8.1.1"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0"
   },
   "license": "MIT",
   "private": true

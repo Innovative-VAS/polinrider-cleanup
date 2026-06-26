@@ -1,0 +1,50 @@
+name: Release
+
+# Tag a release (e.g. `git tag v1.2.0 && git push --tags`) to:
+#   1. verify the committed bundle is fresh,
+#   2. create a GitHub Release, and
+#   3. move the major tag (e.g. v1) to this commit so consumers can pin `@v1`.
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: npm ci
+
+      - name: Tests
+        run: npm test
+
+      - name: Verify committed bundle is fresh
+        run: |
+          npm run build:action
+          if ! git diff --quiet -- dist/; then
+            echo "::error::dist/ does not match src/. Build and commit dist/ before tagging."
+            exit 1
+          fi
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --generate-notes
+
+      - name: Move major tag (vN → this commit)
+        run: |
+          MAJOR="${GITHUB_REF_NAME%%.*}"   # v1.2.0 -> v1
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -f "$MAJOR"
+          git push -f origin "refs/tags/$MAJOR"

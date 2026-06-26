@@ -35,21 +35,28 @@ import * as sig from "./signatures.js";
 import { parseJsonc, getMember } from "./jsonc.js";
 import { collectByExtension } from "./walk.js";
 import { looksSuspicious, collectFontReferences, isReferenced } from "./fonts.js";
+import { buildExcluder } from "./exclude.js";
 
 /**
  * Scan a single repository directory.
  * @param {string} repoDir
+ * @param {{ exclude?: string[]|string }} [opts]  paths/globs to skip (repo-relative).
+ *   Useful so a repo can scan itself while ignoring files that legitimately
+ *   contain signatures (e.g. this tool's own src/signatures.js + fixtures).
  * @returns {Promise<Findings>}
  */
-export async function scanRepo(repoDir) {
+export async function scanRepo(repoDir, opts = {}) {
   const findings = [];
   const rel = (p) => path.relative(repoDir, p) || path.basename(p);
+  const matchExcluded = buildExcluder(opts.exclude);
+  const isExcluded = (abs) =>
+    matchExcluded(path.relative(repoDir, abs).split(path.sep).join("/"));
 
-  await detectJsPayloads(repoDir, findings, rel);
-  await detectVscode(repoDir, findings, rel);
-  await detectFonts(repoDir, findings, rel);
-  await detectPackageJson(repoDir, findings);
-  await detectArtifacts(repoDir, findings);
+  await detectJsPayloads(repoDir, findings, rel, isExcluded);
+  await detectVscode(repoDir, findings, rel, isExcluded);
+  await detectFonts(repoDir, findings, rel, isExcluded);
+  await detectPackageJson(repoDir, findings, isExcluded);
+  await detectArtifacts(repoDir, findings, isExcluded);
 
   const coPresenceAmplified =
     existsSync(path.join(repoDir, ".vscode", "tasks.json")) &&
@@ -83,9 +90,10 @@ export function locatePayloadOffset(text, variant) {
   return anyMatch ? anyMatch.index : -1;
 }
 
-async function detectJsPayloads(repoDir, findings, rel) {
+async function detectJsPayloads(repoDir, findings, rel, isExcluded) {
   const files = await collectByExtension(repoDir, sig.JS_EXTENSIONS);
   for (const file of files) {
+    if (isExcluded(file)) continue;
     let text;
     try {
       text = await fs.readFile(file, "utf8");
@@ -159,9 +167,9 @@ export function classifyVscodeEntry(entryValue) {
   return { bad: false };
 }
 
-async function detectVscode(repoDir, findings, rel) {
+async function detectVscode(repoDir, findings, rel, isExcluded) {
   const vscodeDir = path.join(repoDir, ".vscode");
-  if (!existsSync(vscodeDir)) return;
+  if (!existsSync(vscodeDir) || isExcluded(vscodeDir)) return;
 
   const targets = [
     { name: "tasks.json", arrayKey: "tasks" },
@@ -171,7 +179,7 @@ async function detectVscode(repoDir, findings, rel) {
 
   for (const { name, arrayKey } of targets) {
     const file = path.join(vscodeDir, name);
-    if (!existsSync(file)) continue;
+    if (!existsSync(file) || isExcluded(file)) continue;
     let text;
     try {
       text = await fs.readFile(file, "utf8");
@@ -217,7 +225,7 @@ export function fontDirToRemove(repoDir, fontAbsPath) {
   return null; // not inside a fonts/ dir → caller falls back to deleting the file
 }
 
-async function detectFonts(repoDir, findings, rel) {
+async function detectFonts(repoDir, findings, rel, isExcluded) {
   const fontFiles = await collectByExtension(repoDir, sig.FONT_EXTENSIONS);
   if (fontFiles.length === 0) return;
   const haystack = await collectFontReferences(repoDir);
@@ -226,6 +234,7 @@ async function detectFonts(repoDir, findings, rel) {
   const orphans = []; // suspicious fonts not inside a fonts/ dir
 
   for (const file of fontFiles) {
+    if (isExcluded(file)) continue;
     if (isReferenced(haystack, file)) continue; // referenced → not a carrier
     let buf;
     try {
@@ -274,9 +283,9 @@ async function detectFonts(repoDir, findings, rel) {
 
 // ─── package.json impostor deps / malicious lifecycle scripts ────────────────────
 
-async function detectPackageJson(repoDir, findings) {
+async function detectPackageJson(repoDir, findings, isExcluded) {
   const file = path.join(repoDir, "package.json");
-  if (!existsSync(file)) return;
+  if (!existsSync(file) || isExcluded(file)) return;
   let pkg;
   try {
     pkg = JSON.parse(await fs.readFile(file, "utf8"));
@@ -323,9 +332,9 @@ async function detectPackageJson(repoDir, findings) {
 
 // ─── Standalone artifacts + .gitignore injection ─────────────────────────────────
 
-async function detectArtifacts(repoDir, findings) {
+async function detectArtifacts(repoDir, findings, isExcluded) {
   for (const name of sig.ARTIFACT_FILES) {
-    if (existsSync(path.join(repoDir, name))) {
+    if (existsSync(path.join(repoDir, name)) && !isExcluded(path.join(repoDir, name))) {
       findings.push({
         id: `artifact.${name}`,
         category: "artifact",
@@ -343,7 +352,7 @@ async function detectArtifacts(repoDir, findings) {
   }
 
   const gitignore = path.join(repoDir, ".gitignore");
-  if (existsSync(gitignore)) {
+  if (existsSync(gitignore) && !isExcluded(gitignore)) {
     try {
       const lines = (await fs.readFile(gitignore, "utf8")).split(/\r?\n/).map((l) => l.trim());
       const injected = sig.GITIGNORE_INJECTED.filter((p) => lines.includes(p));

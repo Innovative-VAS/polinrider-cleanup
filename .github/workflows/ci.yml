@@ -1,0 +1,62 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: npm ci
+      - name: Unit tests
+        run: npm test
+      - name: Unit tests (hardened)
+        run: npm run test:hardened
+
+  bundle:
+    # The committed dist/ci.mjs is what the action runs (no install step at
+    # action runtime), so it must always match src/. Rebuild and fail on drift.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: npm ci
+      - name: Rebuild action bundle
+        run: npm run build:action
+      - name: Verify dist/ is up to date
+        run: |
+          if ! git diff --quiet -- dist/; then
+            echo "::error::dist/ is stale. Run 'npm run build:action' and commit the result."
+            git --no-pager diff -- dist/
+            exit 1
+          fi
+
+  self-scan:
+    # Dogfood + self-protection: scan our OWN code for PolinRider malware on
+    # every push/PR. We exclude only the files that legitimately contain
+    # signature strings — the signature catalog, the payload fixtures, and the
+    # bundle that inlines them. Everything else (real source, bin/, scripts/,
+    # configs) is scanned for real, so an actual infection here would fail CI.
+    runs-on: ubuntu-latest
+    needs: bundle
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./
+        with:
+          mode: check
+          comment-on-pr: false
+          exclude: |
+            src/signatures.js
+            test/**
+            dist/**

@@ -1,0 +1,21 @@
+# Auto-clean pushes to the default branch and commit the fix back.
+# commit-back works on push events (not pull_request — see README). Pushes made
+# with the default GITHUB_TOKEN do NOT retrigger workflows, so there's no loop.
+name: PolinRider auto-clean
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write # required to commit the cleanup back
+
+jobs:
+  clean:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Innovative-VAS/polinrider-cleanup@v1
+        with:
+          mode: fix
+          commit: true
+          token: ${{ secrets.GITHUB_TOKEN }}
