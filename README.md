@@ -7,6 +7,27 @@ and opens a PR per infected repo — all inside an isolated Docker container.
 > Use the [**GitHub Action**](#use-as-a-github-action) — it reuses the same
 > detection engine to fail a check, auto-clean, or open a cleanup PR.
 
+## Contents
+
+- [What it does](#what-it-does)
+- [Use as a GitHub Action](#use-as-a-github-action)
+  - [Modes](#modes)
+  - [Enforce it (block infected merges)](#enforce-it-block-infected-merges)
+  - [Permissions](#permissions)
+  - [Reporting](#reporting)
+  - [Excluding known-legit files](#excluding-known-legit-files-and-scanning-the-scanner)
+  - [Inputs](#inputs)
+  - [Notes & limits](#notes--limits)
+- [Prerequisites](#prerequisites)
+- [Setup](#setup)
+- [Running](#running)
+- [Security design](#security-design)
+- [Runtime hardening](#runtime-hardening)
+- [Options](#options)
+- [PR branch protection](#pr-branch-protection)
+- [After merging PRs](#after-merging-prs)
+- [File structure](#file-structure)
+
 ## What it does
 
 For each repo in your org:
@@ -130,8 +151,26 @@ as possible; anything excluded is a blind spot.
 | `merge-method` | `squash` | `squash` · `merge` · `rebase` |
 | `branch-prefix` | `fix/polinrider-cleanup` | `pr` mode branch prefix |
 
-Every input also reads its legacy env var (`GH_TOKEN`, `DRY_RUN`, `AUTO_MERGE`,
-`MERGE_METHOD`, `BRANCH_PREFIX`), so you can configure via `with:` **or** `env:`.
+Several inputs also read a legacy **env var** as a fallback (`DRY_RUN`,
+`AUTO_MERGE`, `MERGE_METHOD`, `BRANCH_PREFIX`, `POLINRIDER_EXCLUDE`, `SARIF_FILE`),
+so you can set them in a workflow/job `env:` block instead of `with:` — handy for
+sharing config across steps. An explicit `with:` value always wins. For a custom
+token use `with: token:` (it defaults to `${{ github.token }}`):
+
+```yaml
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    env:
+      AUTO_MERGE: "true"
+      MERGE_METHOD: rebase
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Innovative-VAS/polinrider-cleanup@v1
+        with:
+          mode: pr
+          token: ${{ secrets.GITHUB_TOKEN }}
+```
 
 **Outputs:** `severity`, `infected`, `findings-count`, `changed`, `remediated`,
 `pr-url`, `sarif-file`.

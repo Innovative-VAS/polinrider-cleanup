@@ -40,21 +40,20 @@ inputs:
     required: false
     default: ''
   dry-run:
-    description: 'Scan and plan remediation without writing files, pushing, or opening PRs.'
+    # No action default on purpose: omitting it lets the DRY_RUN env var apply.
+    # Effective default false.
+    description: 'Scan and plan remediation without writing files, pushing, or opening PRs. Also reads the DRY_RUN env var. Default: false.'
     required: false
-    default: 'false'
   auto-merge:
-    description: 'In pr mode, auto-merge the cleanup PR (respects branch protection).'
+    # No action default on purpose: omitting it lets the AUTO_MERGE env var apply.
+    description: 'In pr mode, auto-merge the cleanup PR (respects branch protection). Also reads the AUTO_MERGE env var. Default: false.'
     required: false
-    default: 'false'
   merge-method:
-    description: 'Merge method when auto-merge is on: squash | merge | rebase.'
+    description: 'Merge method when auto-merge is on: squash | merge | rebase. Also reads the MERGE_METHOD env var. Default: squash.'
     required: false
-    default: 'squash'
   branch-prefix:
-    description: 'Branch name prefix for pr mode.'
+    description: 'Branch name prefix for pr mode. Also reads the BRANCH_PREFIX env var. Default: fix/polinrider-cleanup.'
     required: false
-    default: 'fix/polinrider-cleanup'
 
 outputs:
   severity:
