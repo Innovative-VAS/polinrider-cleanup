@@ -1,5 +1,8 @@
 node_modules/
 
+# NOTE: dist/ is intentionally committed — it is the GitHub Action's runtime
+# entrypoint (dist/ci.mjs), built from src/ci.js. Do not ignore it.
+
 # Secrets — never commit. (.env.example is the committed template.)
 .env
 .env.local

@@ -1,0 +1,18 @@
+# Block infected merges. Add `scan` as a REQUIRED status check in your branch
+# protection / rulesets so a PR can't merge while malware is detected.
+name: PolinRider scan
+on: [pull_request]
+
+permissions:
+  contents: read
+  pull-requests: write # only needed for the PR comment; drop if comment-on-pr: false
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Innovative-VAS/polinrider-cleanup@v1
+        with:
+          mode: check
+          # token defaults to ${{ github.token }} — only needed here for the PR comment

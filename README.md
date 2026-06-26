@@ -3,6 +3,10 @@
 Scans every repo in a GitHub org for PolinRider malware, removes payloads,
 and opens a PR per infected repo — all inside an isolated Docker container.
 
+> Want to scan a **single repo inside CI** instead of sweeping a whole org?
+> Use the [**GitHub Action**](#use-as-a-github-action) — it reuses the same
+> detection engine to fail a check, auto-clean, or open a cleanup PR.
+
 ## What it does
 
 For each repo in your org:
@@ -17,6 +21,109 @@ For each repo in your org:
    - **Fixes** `.gitignore` (removes all injected lines — `config.bat`, `temp_*.bat`, `branch_structure.json` — re-adds `.env*` patterns) and untracks committed `.env` files
    - **Flags for manual review** (never auto-edits): impostor npm dependencies, fetch-and-exec lifecycle scripts, and unknown-but-obfuscated appended code
 4. **Opens a PR** on a new branch with a precise summary of every change — your branch protection rules apply, nothing merges automatically
+
+---
+
+## Use as a GitHub Action
+
+The same engine is published as a reusable Action that scans the repository being
+built — no clone, no org token. Drop it into any workflow:
+
+```yaml
+# .github/workflows/malware-scan.yml
+name: PolinRider scan
+on: [pull_request]
+permissions:
+  contents: read
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Innovative-VAS/polinrider-cleanup@v1
+        with:
+          mode: check   # check | fix | pr
+```
+
+### Modes
+
+| `mode` | What it does | Typical trigger |
+|---|---|---|
+| `check` *(default)* | Scan only. Exits non-zero when malware is found so a **required status check** blocks the merge. No token needed. | `pull_request` |
+| `fix` | Surgically cleans the working tree. With `commit: true` it also commits + pushes the fix back to the branch (push events only). | `push` |
+| `pr` | Cleans on a new branch and opens a cleanup PR (optionally auto-merged). Works where commit-back can't push (fork PRs, protected branches). | `schedule` / `workflow_dispatch` |
+
+Ready-to-copy workflows live in [`examples/`](examples/).
+
+### Enforce it (block infected merges)
+
+`check` exits `1` on a confirmed infection. To turn that into a merge gate, add the
+job as a **required status check**: repo → Settings → Branches (or Rulesets) →
+require the `scan` job to pass. PRs then can't merge while malware is detected.
+
+### Permissions
+
+Grant the least your mode needs:
+
+| Mode / feature | Required `permissions:` |
+|---|---|
+| `check` (no PR comment) | `contents: read` |
+| PR comment (any mode) | `pull-requests: write` |
+| `fix` + `commit: true` | `contents: write` |
+| `pr` | `contents: write` + `pull-requests: write` |
+| `sarif-file` upload | `security-events: write` |
+
+### Reporting
+
+Every run writes a Markdown report to the **job summary**, emits inline
+**annotations** on the PR diff for each finding, and — on `pull_request` events with
+`comment-on-pr: true` (default) — posts the report as a **PR comment** (needs
+`pull-requests: write`; skipped with a warning otherwise). Set `sarif-file` to also
+emit a SARIF report for the **Security** tab:
+
+```yaml
+      - uses: Innovative-VAS/polinrider-cleanup@v1
+        with:
+          mode: check
+          sarif-file: polinrider.sarif
+      - uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: polinrider.sarif
+```
+
+### Inputs
+
+| Input | Default | Description |
+|---|---|---|
+| `mode` | `check` | `check` · `fix` · `pr` |
+| `path` | `.` | Directory to scan (relative to the workspace) |
+| `token` | `${{ github.token }}` | Token for `pr` mode, `fix`+`commit`, and PR comments |
+| `fail-on` | `infected` | Severity that fails the job: `infected` · `suspicious` · `never` |
+| `commit` | `false` | `fix` mode: commit + push the cleanup back (push events) |
+| `comment-on-pr` | `true` | Post the report as a PR comment on `pull_request` events |
+| `sarif-file` | *(off)* | Write a SARIF report to this path |
+| `dry-run` | `false` | Plan changes without writing/pushing |
+| `auto-merge` | `false` | `pr` mode: auto-merge (respects branch protection) |
+| `merge-method` | `squash` | `squash` · `merge` · `rebase` |
+| `branch-prefix` | `fix/polinrider-cleanup` | `pr` mode branch prefix |
+
+Every input also reads its legacy env var (`GH_TOKEN`, `DRY_RUN`, `AUTO_MERGE`,
+`MERGE_METHOD`, `BRANCH_PREFIX`), so you can configure via `with:` **or** `env:`.
+
+**Outputs:** `severity`, `infected`, `findings-count`, `changed`, `remediated`,
+`pr-url`, `sarif-file`.
+
+### Notes & limits
+
+- **Pin for security.** `@v1` tracks the latest v1.x; pin a full SHA
+  (`@<commit-sha>`) if you want immutability.
+- **`fix` + `commit` is push-event only.** On `pull_request` it's skipped (detached
+  HEAD; fork PRs can't be pushed) — use `mode: pr` there. Commit-back uses the
+  default `GITHUB_TOKEN`, whose pushes don't retrigger workflows (no loop).
+- Only **content-confirmed** infections fail by default; impostor deps and
+  fetch-and-exec scripts are flagged for manual review and (in `fix`/`pr`) still
+  fail the check since they can't be auto-removed.
 
 ---
 
@@ -187,18 +294,30 @@ polinrider-remover/
 ├── Dockerfile
 ├── docker-compose.yml
 ├── package.json / .npmrc
+├── action.yml            # GitHub Action metadata (uses dist/ci.mjs)
+├── dist/
+│   └── ci.mjs            # bundled Action entrypoint (built from src/ci.js — committed)
+├── examples/             # ready-to-copy consumer workflows (check / fix / pr)
+├── scripts/
+│   └── build-action.mjs  # esbuild bundler for the Action
 ├── bin/
 │   └── polinrider.js     # hardened launcher (applies V8 flags, then runs src/index.js)
 ├── src/
-│   ├── index.js          # orchestrator: list org repos → clone → scan → remediate → PR
+│   ├── index.js          # org-sweep orchestrator: list org repos → clone → scan → remediate → PR
+│   ├── ci.js             # GitHub Action frontend: scan the checked-out repo → check/fix/pr
 │   ├── safety.js         # runtime guards (eval/Function/vm/process.binding) — imported first
 │   ├── safe-exec.js      # subprocess allowlist (git/gh only, hooks disabled)
 │   ├── signatures.js     # IOC catalog (payload variants, C2 hosts, font magic, impostor deps)
 │   ├── scanner.js        # content-confirmed detection → Findings report
 │   ├── remediator.js     # surgical removal driven by Findings
+│   ├── sarif.js          # Findings → SARIF 2.1.0 (for code-scanning upload)
 │   ├── jsonc.js          # tolerant JSONC parser + array splicer (no eval)
 │   ├── fonts.js          # font magic-byte + reference analysis
 │   ├── walk.js           # symlink-safe file walker
 │   └── report.js         # console + Markdown PR-body rendering
 └── test/                 # node:test specs + fixtures
 ```
+
+> **Two frontends, one engine.** `src/index.js` (org sweep, Docker) and `src/ci.js`
+> (GitHub Action) both drive the same `scanner.js` + `remediator.js` + signatures —
+> detection logic is defined once.

@@ -1,0 +1,73 @@
+name: 'PolinRider Malware Scanner'
+description: 'Scan a repository for PolinRider malware — fail the check, auto-clean the working tree, or open a cleanup PR.'
+author: 'Innovative-VAS'
+
+branding:
+  icon: 'shield'
+  color: 'red'
+
+inputs:
+  mode:
+    description: 'What to do on detection: check (scan + fail), fix (clean the working tree), or pr (open a cleanup PR).'
+    required: false
+    default: 'check'
+  path:
+    description: 'Directory to scan, relative to the workspace root.'
+    required: false
+    default: '.'
+  token:
+    description: 'GitHub token used for pr mode, fix + commit, and PR comments.'
+    required: false
+    default: ${{ github.token }}
+  fail-on:
+    description: 'Severity that fails the job: infected | suspicious | never.'
+    required: false
+    default: 'infected'
+  commit:
+    description: 'In fix mode, commit and push the cleaned files back to the branch (push events only).'
+    required: false
+    default: 'false'
+  comment-on-pr:
+    description: 'Post the scan report as a comment on pull_request events (needs pull-requests: write).'
+    required: false
+    default: 'true'
+  sarif-file:
+    description: 'Write a SARIF report to this path for upload to GitHub code scanning (empty = skip).'
+    required: false
+    default: ''
+  dry-run:
+    description: 'Scan and plan remediation without writing files, pushing, or opening PRs.'
+    required: false
+    default: 'false'
+  auto-merge:
+    description: 'In pr mode, auto-merge the cleanup PR (respects branch protection).'
+    required: false
+    default: 'false'
+  merge-method:
+    description: 'Merge method when auto-merge is on: squash | merge | rebase.'
+    required: false
+    default: 'squash'
+  branch-prefix:
+    description: 'Branch name prefix for pr mode.'
+    required: false
+    default: 'fix/polinrider-cleanup'
+
+outputs:
+  severity:
+    description: 'clean | suspicious | infected.'
+  infected:
+    description: 'true when a confirmed PolinRider payload was found.'
+  findings-count:
+    description: 'Number of findings.'
+  changed:
+    description: 'true when files were modified or deleted (fix/pr modes).'
+  remediated:
+    description: 'true when any file was cleaned or removed.'
+  pr-url:
+    description: 'URL of the cleanup PR (pr mode).'
+  sarif-file:
+    description: 'Path to the written SARIF report, if any.'
+
+runs:
+  using: 'node20'
+  main: 'dist/ci.mjs'

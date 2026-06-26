@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci
+      - name: Unit tests
+        run: npm test
+      - name: Unit tests (hardened)
+        run: npm run test:hardened
+
+  bundle:
+    # The committed dist/ci.mjs is what the action runs (no install step at
+    # action runtime), so it must always match src/. Rebuild and fail on drift.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci
+      - name: Rebuild action bundle
+        run: npm run build:action
+      - name: Verify dist/ is up to date
+        run: |
+          if ! git diff --quiet -- dist/; then
+            echo "::error::dist/ is stale. Run 'npm run build:action' and commit the result."
+            git --no-pager diff -- dist/
+            exit 1
+          fi
+
+  self-scan:
+    # Dogfood: run the action on its own code in check mode.
+    runs-on: ubuntu-latest
+    needs: bundle
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./
+        with:
+          mode: check
