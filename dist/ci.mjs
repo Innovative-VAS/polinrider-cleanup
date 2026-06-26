@@ -985,15 +985,50 @@ function isReferenced(haystack, fontPath) {
   return haystack.includes(path2.basename(fontPath).toLowerCase());
 }
 
+// src/exclude.js
+var normalize = (p) => (p || "").replace(/\\/g, "/").replace(/^\.\//, "").replace(/\/+$/, "");
+function globToRegExp(glob) {
+  let re = "";
+  for (let i2 = 0; i2 < glob.length; i2++) {
+    const c3 = glob[i2];
+    if (c3 === "*") {
+      if (glob[i2 + 1] === "*") {
+        re += ".*";
+        i2++;
+      } else {
+        re += "[^/]*";
+      }
+    } else if (c3 === "?") {
+      re += "[^/]";
+    } else if ("\\^$.|+()[]{}".includes(c3)) {
+      re += "\\" + c3;
+    } else {
+      re += c3;
+    }
+  }
+  return new RegExp("^" + re + "$");
+}
+function buildExcluder(patterns) {
+  const list = Array.isArray(patterns) ? patterns : String(patterns || "").split(/[,\n]/);
+  const specs = list.map((p) => normalize(p.trim?.() ?? p)).filter(Boolean).map((n2) => ({ prefix: n2, re: globToRegExp(n2) }));
+  if (specs.length === 0) return () => false;
+  return (rel) => {
+    const r = (rel || "").replace(/\\/g, "/");
+    return specs.some((s) => r === s.prefix || r.startsWith(s.prefix + "/") || s.re.test(r));
+  };
+}
+
 // src/scanner.js
-async function scanRepo(repoDir) {
+async function scanRepo(repoDir, opts = {}) {
   const findings = [];
   const rel = (p) => path3.relative(repoDir, p) || path3.basename(p);
-  await detectJsPayloads(repoDir, findings, rel);
-  await detectVscode(repoDir, findings, rel);
-  await detectFonts(repoDir, findings, rel);
-  await detectPackageJson(repoDir, findings);
-  await detectArtifacts(repoDir, findings);
+  const matchExcluded = buildExcluder(opts.exclude);
+  const isExcluded = (abs) => matchExcluded(path3.relative(repoDir, abs).split(path3.sep).join("/"));
+  await detectJsPayloads(repoDir, findings, rel, isExcluded);
+  await detectVscode(repoDir, findings, rel, isExcluded);
+  await detectFonts(repoDir, findings, rel, isExcluded);
+  await detectPackageJson(repoDir, findings, isExcluded);
+  await detectArtifacts(repoDir, findings, isExcluded);
   const coPresenceAmplified = existsSync(path3.join(repoDir, ".vscode", "tasks.json")) && existsSync(path3.join(repoDir, ".vscode", "launch.json")) && FONT_DIRS.some((d) => existsSync(path3.join(repoDir, d)));
   const hasContentConfirmed = findings.some((f) => f.contentConfirmed);
   let severity = "clean";
@@ -1013,9 +1048,10 @@ function locatePayloadOffset(text, variant) {
   const anyMatch = new RegExp(variant.startRe.source).exec(text);
   return anyMatch ? anyMatch.index : -1;
 }
-async function detectJsPayloads(repoDir, findings, rel) {
+async function detectJsPayloads(repoDir, findings, rel, isExcluded) {
   const files = await collectByExtension(repoDir, JS_EXTENSIONS);
   for (const file of files) {
+    if (isExcluded(file)) continue;
     let text;
     try {
       text = await fs3.readFile(file, "utf8");
@@ -1076,9 +1112,9 @@ function classifyVscodeEntry(entryValue) {
   }
   return { bad: false };
 }
-async function detectVscode(repoDir, findings, rel) {
+async function detectVscode(repoDir, findings, rel, isExcluded) {
   const vscodeDir = path3.join(repoDir, ".vscode");
-  if (!existsSync(vscodeDir)) return;
+  if (!existsSync(vscodeDir) || isExcluded(vscodeDir)) return;
   const targets = [
     { name: "tasks.json", arrayKey: "tasks" },
     { name: "launch.json", arrayKey: "configurations" }
@@ -1086,7 +1122,7 @@ async function detectVscode(repoDir, findings, rel) {
   const reasons = /* @__PURE__ */ new Set();
   for (const { name, arrayKey } of targets) {
     const file = path3.join(vscodeDir, name);
-    if (!existsSync(file)) continue;
+    if (!existsSync(file) || isExcluded(file)) continue;
     let text;
     try {
       text = await fs3.readFile(file, "utf8");
@@ -1124,13 +1160,14 @@ function fontDirToRemove(repoDir, fontAbsPath) {
   if (idx >= 0) return path3.join(repoDir, ...parts.slice(0, idx + 1));
   return null;
 }
-async function detectFonts(repoDir, findings, rel) {
+async function detectFonts(repoDir, findings, rel, isExcluded) {
   const fontFiles = await collectByExtension(repoDir, FONT_EXTENSIONS);
   if (fontFiles.length === 0) return;
   const haystack = await collectFontReferences(repoDir);
   const dirsToRemove = /* @__PURE__ */ new Map();
   const orphans = [];
   for (const file of fontFiles) {
+    if (isExcluded(file)) continue;
     if (isReferenced(haystack, file)) continue;
     let buf;
     try {
@@ -1173,9 +1210,9 @@ async function detectFonts(repoDir, findings, rel) {
     });
   }
 }
-async function detectPackageJson(repoDir, findings) {
+async function detectPackageJson(repoDir, findings, isExcluded) {
   const file = path3.join(repoDir, "package.json");
-  if (!existsSync(file)) return;
+  if (!existsSync(file) || isExcluded(file)) return;
   let pkg;
   try {
     pkg = JSON.parse(await fs3.readFile(file, "utf8"));
@@ -1218,9 +1255,9 @@ async function detectPackageJson(repoDir, findings) {
     }
   }
 }
-async function detectArtifacts(repoDir, findings) {
+async function detectArtifacts(repoDir, findings, isExcluded) {
   for (const name of ARTIFACT_FILES) {
-    if (existsSync(path3.join(repoDir, name))) {
+    if (existsSync(path3.join(repoDir, name)) && !isExcluded(path3.join(repoDir, name))) {
       findings.push({
         id: `artifact.${name}`,
         category: "artifact",
@@ -1234,7 +1271,7 @@ async function detectArtifacts(repoDir, findings) {
     }
   }
   const gitignore = path3.join(repoDir, ".gitignore");
-  if (existsSync(gitignore)) {
+  if (existsSync(gitignore) && !isExcluded(gitignore)) {
     try {
       const lines = (await fs3.readFile(gitignore, "utf8")).split(/\r?\n/).map((l) => l.trim());
       const injected = GITIGNORE_INJECTED.filter((p) => lines.includes(p));
@@ -8419,6 +8456,7 @@ function resolveSettings() {
   return {
     mode: (input("mode") || "check").toLowerCase(),
     scanPath: input("path") || ".",
+    exclude: input("exclude") || process.env.POLINRIDER_EXCLUDE || "",
     token: input("token") || process.env.GH_TOKEN || process.env.GITHUB_TOKEN || "",
     failOn: (input("fail-on") || "infected").toLowerCase(),
     commit: bool(input("commit")),
@@ -8641,7 +8679,7 @@ async function run() {
   console.log(
     `PolinRider scan \u2014 mode=${settings.mode} path=${path11.relative(workspace, repoDir) || "."}${settings.dryRun ? " (dry run)" : ""}`
   );
-  const findings = await scanRepo(repoDir);
+  const findings = await scanRepo(repoDir, { exclude: settings.exclude });
   emitAnnotations(workspace, repoDir, findings);
   let result = null;
   let prUrl = "";

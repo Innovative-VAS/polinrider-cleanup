@@ -15,6 +15,10 @@ inputs:
     description: 'Directory to scan, relative to the workspace root.'
     required: false
     default: '.'
+  exclude:
+    description: 'Comma/newline-separated paths or globs to skip (repo-relative), e.g. "test/**, vendor/**". Useful to ignore files that legitimately contain malware signatures.'
+    required: false
+    default: ''
   token:
     description: 'GitHub token used for pr mode, fix + commit, and PR comments.'
     required: false

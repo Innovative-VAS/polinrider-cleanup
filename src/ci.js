@@ -53,6 +53,7 @@ export function resolveSettings() {
   return {
     mode: (input("mode") || "check").toLowerCase(),
     scanPath: input("path") || ".",
+    exclude: input("exclude") || process.env.POLINRIDER_EXCLUDE || "",
     token: input("token") || process.env.GH_TOKEN || process.env.GITHUB_TOKEN || "",
     failOn: (input("fail-on") || "infected").toLowerCase(),
     commit: bool(input("commit")), // default false
@@ -304,7 +305,7 @@ export async function run() {
       `${settings.dryRun ? " (dry run)" : ""}`,
   );
 
-  const findings = await scanRepo(repoDir);
+  const findings = await scanRepo(repoDir, { exclude: settings.exclude });
   emitAnnotations(workspace, repoDir, findings);
 
   let result = null;

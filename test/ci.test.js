@@ -150,6 +150,21 @@ test("check: fail-on=never never fails, even when infected", async () => {
   assert.equal(outputs.infected, "true");
 });
 
+test("check: exclude skips flagged files", async () => {
+  // A vendored copy that legitimately carries a signature would false-positive;
+  // excluding it makes the scan clean, while a real infection elsewhere still fails.
+  const repo = await makeRepo({
+    "vendor/sig-sample.js": infectedConfig(ORIGINAL_PAYLOAD),
+  });
+  const withoutExclude = await runAction(repo, { mode: "check" });
+  assert.equal(withoutExclude.code, 1);
+  assert.equal(withoutExclude.outputs.severity, "infected");
+
+  const withExclude = await runAction(repo, { mode: "check", exclude: "vendor/**" });
+  assert.equal(withExclude.code, 0);
+  assert.equal(withExclude.outputs.severity, "clean");
+});
+
 test("check: suspicious repo fails only at fail-on=suspicious", async () => {
   const repo = await makeRepo({ "weird.js": `export const x = 1;\n${GENERIC_PAYLOAD}` });
   const def = await runAction(repo, { mode: "check" }); // fail-on=infected

@@ -92,12 +92,34 @@ emit a SARIF report for the **Security** tab:
           sarif_file: polinrider.sarif
 ```
 
+### Excluding known-legit files (and scanning the scanner)
+
+Some repos legitimately contain content that looks like a payload — security
+tooling, malware test fixtures, vendored bundles. Use `exclude` to skip those
+paths so real infections elsewhere still fail the check:
+
+```yaml
+      - uses: Innovative-VAS/polinrider-cleanup@v1
+        with:
+          mode: check
+          exclude: |
+            test/fixtures/**
+            vendor/**
+```
+
+This is how this repo scans **itself** in CI: it excludes only its signature
+catalog, payload fixtures, and built bundle (`src/signatures.js`, `test/**`,
+`dist/**`) — everything else (real source, configs, `bin/`) is scanned for real,
+so an actual infection here would fail the build. Keep the exclude list as tight
+as possible; anything excluded is a blind spot.
+
 ### Inputs
 
 | Input | Default | Description |
 |---|---|---|
 | `mode` | `check` | `check` · `fix` · `pr` |
 | `path` | `.` | Directory to scan (relative to the workspace) |
+| `exclude` | *(none)* | Comma/newline-separated paths or globs to skip, e.g. `test/**, vendor/**` |
 | `token` | `${{ github.token }}` | Token for `pr` mode, `fix`+`commit`, and PR comments |
 | `fail-on` | `infected` | Severity that fails the job: `infected` · `suspicious` · `never` |
 | `commit` | `false` | `fix` mode: commit + push the cleanup back (push events) |
@@ -309,6 +331,7 @@ polinrider-remover/
 │   ├── safe-exec.js      # subprocess allowlist (git/gh only, hooks disabled)
 │   ├── signatures.js     # IOC catalog (payload variants, C2 hosts, font magic, impostor deps)
 │   ├── scanner.js        # content-confirmed detection → Findings report
+│   ├── exclude.js        # glob matcher for the scan `exclude` option
 │   ├── remediator.js     # surgical removal driven by Findings
 │   ├── sarif.js          # Findings → SARIF 2.1.0 (for code-scanning upload)
 │   ├── jsonc.js          # tolerant JSONC parser + array splicer (no eval)
