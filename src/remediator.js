@@ -53,6 +53,9 @@ export async function remediate(repoDir, findings, opts = {}) {
       case "remove-artifact":
         await deleteFile(f, result, dryRun);
         break;
+      case "remove-font-set":
+        await deleteFileSet(f, result, dryRun);
+        break;
       case "fix-gitignore":
         // handled by the always-on gitignore hygiene step below
         break;
@@ -133,6 +136,25 @@ async function deleteFile(f, result, dryRun) {
   if (!dryRun) await fs.rm(absPath, { force: true });
   result.applied.push(f);
   recordDeleted(result, f.file);
+}
+
+// ─── remove-font-set (carrier + its fa-* disguise siblings + README) ─────────────
+//
+// Removes a specific set of files inside a fonts/ dir while preserving the clean
+// fonts that share it. Each path is deleted individually and recorded by its
+// repo-relative name.
+
+async function deleteFileSet(f, result, dryRun) {
+  const removals = Array.isArray(f.edit?.removals) ? f.edit.removals : [];
+  let any = false;
+  for (const { abs, rel } of removals) {
+    if (!abs || !existsSync(abs)) continue;
+    if (!dryRun) await fs.rm(abs, { force: true });
+    recordDeleted(result, rel);
+    any = true;
+  }
+  if (any) result.applied.push(f);
+  else result.skipped.push({ finding: f, reason: "already gone" });
 }
 
 // ─── .gitignore hygiene ──────────────────────────────────────────────────────────

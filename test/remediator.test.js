@@ -52,11 +52,25 @@ test("removes the entire .vscode directory when a malicious task is found", asyn
   assert.equal(existsSync(path.join(repo, ".vscode")), false, ".vscode removed entirely");
 });
 
-test("removes the whole public/fonts directory when a carrier is found", async () => {
+test("removes the carrier but preserves a referenced clean font (remove-font-set)", async () => {
   const repo = await makeRepo({
     "public/fonts/evil.woff2": evilFont(),
     "public/fonts/good.woff2": goodFont(),
     "src/app.css": `@font-face{src:url('/fonts/good.woff2');}`,
+  });
+  const findings = await scanRepo(repo);
+  const result = await remediate(repo, findings, { git: noGit });
+  assert.equal(result.changed, true);
+  assert.equal(existsSync(path.join(repo, "public/fonts/evil.woff2")), false, "carrier removed");
+  assert.equal(existsSync(path.join(repo, "public/fonts/good.woff2")), true, "clean font preserved");
+  assert.equal(existsSync(path.join(repo, "public/fonts")), true, "fonts dir kept");
+});
+
+test("removes the whole fonts dir when it is entirely malware (remove-dir)", async () => {
+  const repo = await makeRepo({
+    "public/fonts/fa-solid-400.woff2": evilFont(),
+    "public/fonts/fa-brands-400.woff2": goodFont(),
+    "public/fonts/README.md": "# Font Awesome",
   });
   const findings = await scanRepo(repo);
   await remediate(repo, findings, { git: noGit });

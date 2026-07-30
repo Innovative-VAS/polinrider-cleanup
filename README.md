@@ -37,7 +37,7 @@ For each repo in your org:
 3. **Surgically remediates** infected repos — removing only what is confirmed malicious and preserving legitimate code, tasks, fonts, and configs:
    - **Strips** the appended obfuscated payload (original + rotated variants) from any `.js/.ts/.mjs` file (config files, `App.js`, `vite.config.js`, …), keeping everything before the payload byte-for-byte
    - **Removes the entire `.vscode` directory** when any task/launch entry is malicious — `curl … | bash`, `runOn: folderOpen` auto-runs, C2 hosts, or running an interpreter against a font/asset (e.g. `node ./public/fonts/x.woff2`)
-   - **Removes the entire fonts directory** (e.g. `public/fonts`) when it contains a carrier font that is unreferenced *and* doesn't look like a real font
+   - **Removes font carriers strategically.** A font is a *confirmed carrier* only when it is unreferenced, fails structural font validation (no valid magic / table directory — real fonts, including commercial `.otf` files with embedded license URLs and binary blobs, are trusted), *and* contains an appended code payload. When a carrier is found, the scanner removes the carrier plus the whole Font-Awesome-named disguise set (`fa-brands/solid/regular-…`) and its `README.md`, while **preserving clean, non-`fa-` fonts in the same directory** (only the leaf `fonts/` dir is removed if nothing clean remains). `fa-`-named fonts with **no** payload are flagged `suspicious` for manual review — never auto-removed.
    - **Deletes** `temp_auto_push.bat`, `temp_interactive_push.bat`, `config.bat`, `branch_structure.json`
    - **Fixes** `.gitignore` (removes all injected lines — `config.bat`, `temp_*.bat`, `branch_structure.json` — re-adds `.env*` patterns) and untracks committed `.env` files
    - **Flags for manual review** (never auto-edits): impostor npm dependencies, fetch-and-exec lifecycle scripts, and unknown-but-obfuscated appended code
@@ -374,7 +374,7 @@ polinrider-remover/
 │   ├── remediator.js     # surgical removal driven by Findings
 │   ├── sarif.js          # Findings → SARIF 2.1.0 (for code-scanning upload)
 │   ├── jsonc.js          # tolerant JSONC parser + array splicer (no eval)
-│   ├── fonts.js          # font magic-byte + reference analysis
+│   ├── fonts.js          # structural font validation + reference analysis
 │   ├── walk.js           # symlink-safe file walker
 │   └── report.js         # console + Markdown PR-body rendering
 └── test/                 # node:test specs + fixtures
