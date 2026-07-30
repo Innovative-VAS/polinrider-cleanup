@@ -33,7 +33,7 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import * as sig from "./signatures.js";
 import { parseJsonc, getMember } from "./jsonc.js";
-import { collectByExtension, walkFiles } from "./walk.js";
+import { collectByExtension } from "./walk.js";
 import { looksSuspicious, collectFontReferences, isReferenced } from "./fonts.js";
 import { buildExcluder } from "./exclude.js";
 
@@ -235,32 +235,55 @@ async function detectFonts(repoDir, findings, rel, isExcluded) {
   const groups = new Map(); // absDir → { confirmed:[], suspect:[] }
   const orphans = []; // suspicious/fa fonts with no fonts/ ancestor
 
+  const ensureGroup = (dir) => {
+    if (!groups.has(dir)) groups.set(dir, { confirmed: [], suspect: [] });
+    return groups.get(dir);
+  };
+
   for (const file of fontFiles) {
     if (isExcluded(file)) continue;
     const isFa = sig.isFaFamilyName(path.basename(file));
-    const referenced = isReferenced(haystack, file);
-
-    // Referenced fonts are trusted; we still note fa-named ones for the disguise
-    // check but never read/flag them as carriers.
-    let susp = { bad: false, hasCodeStrings: false, reasons: [] };
-    if (!referenced) {
-      try {
-        susp = looksSuspicious(await fs.readFile(file), path.extname(file));
-      } catch {
-        continue;
-      }
+    let susp;
+    try {
+      susp = looksSuspicious(await fs.readFile(file), path.extname(file));
+    } catch {
+      continue;
     }
-    if (!susp.bad && !isFa) continue; // valid, inert, non-disguise font → leave it
+    const referenced = isReferenced(haystack, file);
+    const isCarrier = susp.bad && susp.hasCodeStrings; // not a valid font + code payload
+    const dir = fontDirToRemove(repoDir, file);
+
+    // Referenced fonts are wired into the build, so they are never auto-deleted.
+    // But "referenced" is not a clean bill of health: a referenced file that is
+    // NOT a valid font yet carries a code payload is a carrier hiding in plain
+    // sight → surface it for manual review rather than silently trusting it.
+    if (referenced) {
+      if (isCarrier) {
+        findings.push({
+          id: "font.referenced-carrier",
+          category: "font",
+          file: rel(file),
+          confidence: "high",
+          action: "manual-review",
+          contentConfirmed: false,
+          description: `Referenced file that is not a valid font but contains a code payload (${susp.reasons.join("; ")}). It is imported by the build, so it is not auto-removed — review and remove it manually.`,
+        });
+      }
+      // A referenced fa-named font still registers its dir so the disguise (medium)
+      // check fires, but it is never treated as a deletable carrier.
+      if (isFa && dir) ensureGroup(dir);
+      continue;
+    }
+
+    if (!susp.bad && !isFa) continue; // valid, inert, non-disguise, unreferenced → leave it
 
     const entry = { file, reasons: susp.reasons };
-    const dir = fontDirToRemove(repoDir, file);
     if (dir) {
-      if (!groups.has(dir)) groups.set(dir, { confirmed: [], suspect: [] });
-      const g = groups.get(dir);
-      if (susp.bad && susp.hasCodeStrings) g.confirmed.push(entry);
+      const g = ensureGroup(dir);
+      if (isCarrier) g.confirmed.push(entry);
       else if (susp.bad) g.suspect.push(entry);
       // (fa-named-but-valid fonts add nothing here; emit() re-discovers them by name)
-    } else if (susp.bad && susp.hasCodeStrings) {
+    } else if (isCarrier) {
       orphans.push({ ...entry, kind: "carrier" });
     } else if (susp.bad || isFa) {
       orphans.push({ ...entry, kind: "review", isFa });
@@ -302,6 +325,33 @@ async function detectFonts(repoDir, findings, rel, isExcluded) {
 }
 
 /**
+ * List everything under `dir`. `allEntries` includes files, sub-directories AND
+ * symlinks (symlinks are recorded but never followed, matching the walker's safety
+ * guarantee); `regularFiles` are the real files only — the pool we may remove.
+ */
+async function listTree(dir) {
+  const allEntries = [];
+  const regularFiles = [];
+  const rec = async (d) => {
+    let entries;
+    try {
+      entries = await fs.readdir(d, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const ent of entries) {
+      const full = path.join(d, ent.name);
+      allEntries.push(full);
+      if (ent.isSymbolicLink()) continue; // counts as "present", but not followed or removed
+      if (ent.isDirectory()) await rec(full);
+      else if (ent.isFile()) regularFiles.push(full);
+    }
+  };
+  await rec(dir);
+  return { allEntries, regularFiles };
+}
+
+/**
  * Decide what to remove for one `fonts/` directory that contains a suspicious or
  * disguise-named font.
  *
@@ -313,16 +363,25 @@ async function detectFonts(repoDir, findings, rel, isExcluded) {
  *   manual-review only; nothing is auto-removed.
  */
 async function emitFontDirFinding(dir, group, findings, rel, isExcluded) {
-  const allFiles = [];
-  for await (const f of walkFiles(dir)) allFiles.push(f);
-
-  const faFiles = allFiles.filter((f) => !isExcluded(f) && sig.isFaFamilyName(path.basename(f)));
-  const sidecars = allFiles.filter((f) => !isExcluded(f) && sig.isFontDropSidecar(path.basename(f)));
+  // Enumerate the dir INCLUDING symlinks and sub-directory entries. `allEntries`
+  // is used only to decide "is anything here besides the removal set?" — a symlink
+  // or a sub-directory (e.g. a clean gill-sans/) must count so we never escalate to
+  // a whole-dir removal that would take a clean font with it. `regularFiles` is the
+  // pool of real files we may actually remove.
+  const { allEntries, regularFiles } = await listTree(dir);
+  const faAll = regularFiles.filter((f) => !isExcluded(f) && sig.isFaFamilyName(path.basename(f)));
 
   if (group.confirmed.length > 0) {
     const carrierReasons = [...new Set(group.confirmed.flatMap((e) => e.reasons))].join("; ");
+    // Scope the disguise sweep to the carrier's OWN directory: remove fa-* files and
+    // README sidecars that sit beside a carrier, never ones in a nested clean subdir.
+    const carrierDirs = new Set(group.confirmed.map((e) => path.dirname(e.file)));
+    const inScope = (f) => carrierDirs.has(path.dirname(f)) && !isExcluded(f);
+    const faFiles = faAll.filter(inScope);
+    const sidecars = regularFiles.filter((f) => inScope(f) && sig.isFontDropSidecar(path.basename(f)));
+
     const removalAbs = new Set([...group.confirmed.map((e) => e.file), ...faFiles, ...sidecars]);
-    const remaining = allFiles.filter((f) => !removalAbs.has(f)); // clean files to preserve
+    const remaining = allEntries.filter((f) => !removalAbs.has(f)); // anything clean to preserve
 
     if (remaining.length === 0) {
       findings.push({
@@ -347,7 +406,7 @@ async function emitFontDirFinding(dir, group, findings, rel, isExcluded) {
         description:
           `Font carrier(s) in ${rel(dir)} (${carrierReasons}) — removing ${removals.length} ` +
           `malicious/disguise file(s): ${removals.map((r) => path.basename(r.rel)).join(", ")}. ` +
-          `Preserving ${remaining.length} clean file(s).`,
+          `Preserving ${remaining.length} clean entr${remaining.length === 1 ? "y" : "ies"}.`,
         edit: { removals },
       });
     }
@@ -356,9 +415,9 @@ async function emitFontDirFinding(dir, group, findings, rel, isExcluded) {
 
   // No confirmed carrier: fa-disguise names and/or an unrecognized blob → medium.
   const bits = [];
-  if (faFiles.length) {
+  if (faAll.length) {
     bits.push(
-      `Font-Awesome-named font(s) present (${faFiles.map((f) => path.basename(f)).join(", ")}) — a known PolinRider disguise`,
+      `Font-Awesome-named font(s) present (${faAll.map((f) => path.basename(f)).join(", ")}) — a known PolinRider disguise`,
     );
   }
   if (group.suspect.length) {

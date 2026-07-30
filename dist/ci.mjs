@@ -1219,27 +1219,44 @@ async function detectFonts(repoDir, findings, rel, isExcluded) {
   const haystack = await collectFontReferences(repoDir);
   const groups = /* @__PURE__ */ new Map();
   const orphans = [];
+  const ensureGroup = (dir) => {
+    if (!groups.has(dir)) groups.set(dir, { confirmed: [], suspect: [] });
+    return groups.get(dir);
+  };
   for (const file of fontFiles) {
     if (isExcluded(file)) continue;
     const isFa = isFaFamilyName(path3.basename(file));
+    let susp;
+    try {
+      susp = looksSuspicious(await fs3.readFile(file), path3.extname(file));
+    } catch {
+      continue;
+    }
     const referenced = isReferenced(haystack, file);
-    let susp = { bad: false, hasCodeStrings: false, reasons: [] };
-    if (!referenced) {
-      try {
-        susp = looksSuspicious(await fs3.readFile(file), path3.extname(file));
-      } catch {
-        continue;
+    const isCarrier = susp.bad && susp.hasCodeStrings;
+    const dir = fontDirToRemove(repoDir, file);
+    if (referenced) {
+      if (isCarrier) {
+        findings.push({
+          id: "font.referenced-carrier",
+          category: "font",
+          file: rel(file),
+          confidence: "high",
+          action: "manual-review",
+          contentConfirmed: false,
+          description: `Referenced file that is not a valid font but contains a code payload (${susp.reasons.join("; ")}). It is imported by the build, so it is not auto-removed \u2014 review and remove it manually.`
+        });
       }
+      if (isFa && dir) ensureGroup(dir);
+      continue;
     }
     if (!susp.bad && !isFa) continue;
     const entry = { file, reasons: susp.reasons };
-    const dir = fontDirToRemove(repoDir, file);
     if (dir) {
-      if (!groups.has(dir)) groups.set(dir, { confirmed: [], suspect: [] });
-      const g = groups.get(dir);
-      if (susp.bad && susp.hasCodeStrings) g.confirmed.push(entry);
+      const g = ensureGroup(dir);
+      if (isCarrier) g.confirmed.push(entry);
       else if (susp.bad) g.suspect.push(entry);
-    } else if (susp.bad && susp.hasCodeStrings) {
+    } else if (isCarrier) {
       orphans.push({ ...entry, kind: "carrier" });
     } else if (susp.bad || isFa) {
       orphans.push({ ...entry, kind: "review", isFa });
@@ -1273,15 +1290,38 @@ async function detectFonts(repoDir, findings, rel, isExcluded) {
     }
   }
 }
+async function listTree(dir) {
+  const allEntries = [];
+  const regularFiles = [];
+  const rec = async (d) => {
+    let entries;
+    try {
+      entries = await fs3.readdir(d, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const ent of entries) {
+      const full = path3.join(d, ent.name);
+      allEntries.push(full);
+      if (ent.isSymbolicLink()) continue;
+      if (ent.isDirectory()) await rec(full);
+      else if (ent.isFile()) regularFiles.push(full);
+    }
+  };
+  await rec(dir);
+  return { allEntries, regularFiles };
+}
 async function emitFontDirFinding(dir, group, findings, rel, isExcluded) {
-  const allFiles = [];
-  for await (const f of walkFiles(dir)) allFiles.push(f);
-  const faFiles = allFiles.filter((f) => !isExcluded(f) && isFaFamilyName(path3.basename(f)));
-  const sidecars = allFiles.filter((f) => !isExcluded(f) && isFontDropSidecar(path3.basename(f)));
+  const { allEntries, regularFiles } = await listTree(dir);
+  const faAll = regularFiles.filter((f) => !isExcluded(f) && isFaFamilyName(path3.basename(f)));
   if (group.confirmed.length > 0) {
     const carrierReasons = [...new Set(group.confirmed.flatMap((e) => e.reasons))].join("; ");
+    const carrierDirs = new Set(group.confirmed.map((e) => path3.dirname(e.file)));
+    const inScope = (f) => carrierDirs.has(path3.dirname(f)) && !isExcluded(f);
+    const faFiles = faAll.filter(inScope);
+    const sidecars = regularFiles.filter((f) => inScope(f) && isFontDropSidecar(path3.basename(f)));
     const removalAbs = /* @__PURE__ */ new Set([...group.confirmed.map((e) => e.file), ...faFiles, ...sidecars]);
-    const remaining = allFiles.filter((f) => !removalAbs.has(f));
+    const remaining = allEntries.filter((f) => !removalAbs.has(f));
     if (remaining.length === 0) {
       findings.push({
         id: "font.carrier-dir",
@@ -1302,16 +1342,16 @@ async function emitFontDirFinding(dir, group, findings, rel, isExcluded) {
         confidence: "high",
         action: "remove-font-set",
         contentConfirmed: true,
-        description: `Font carrier(s) in ${rel(dir)} (${carrierReasons}) \u2014 removing ${removals.length} malicious/disguise file(s): ${removals.map((r) => path3.basename(r.rel)).join(", ")}. Preserving ${remaining.length} clean file(s).`,
+        description: `Font carrier(s) in ${rel(dir)} (${carrierReasons}) \u2014 removing ${removals.length} malicious/disguise file(s): ${removals.map((r) => path3.basename(r.rel)).join(", ")}. Preserving ${remaining.length} clean entr${remaining.length === 1 ? "y" : "ies"}.`,
         edit: { removals }
       });
     }
     return;
   }
   const bits = [];
-  if (faFiles.length) {
+  if (faAll.length) {
     bits.push(
-      `Font-Awesome-named font(s) present (${faFiles.map((f) => path3.basename(f)).join(", ")}) \u2014 a known PolinRider disguise`
+      `Font-Awesome-named font(s) present (${faAll.map((f) => path3.basename(f)).join(", ")}) \u2014 a known PolinRider disguise`
     );
   }
   if (group.suspect.length) {
