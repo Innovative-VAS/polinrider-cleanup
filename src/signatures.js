@@ -136,17 +136,34 @@ export const FONT_MAGIC = {
   eot: null, // EOT has no single stable magic; treat presence-only
 };
 
-// JS-like strings that should NEVER appear in a real binary font file.
+// Code-execution strings that should NEVER appear in a real font file. These are
+// the signal that an unparseable "font" is actually an appended JS payload.
+//
+// NOTE: plain URLs and long base64-looking runs are deliberately NOT here — real
+// fonts legitimately embed license/vendor URLs in their `name` table, and binary
+// glyph data trivially produces long [A-Za-z0-9+/] runs. Both caused false
+// positives on genuine fonts (e.g. commercial .otf files). Structural validation
+// in fonts.js is the primary "is this a real font?" signal now; these strings only
+// corroborate a file that already failed to parse as a font.
 export const FONT_BADNESS_RES = [
   /eval\s*\(/,
   /global\s*\[/,
   /require\s*\(/,
   /child_process/,
   /process\.(?:env|binding)/,
-  /https?:\/\//,
   /function\s*\(/,
   /\bnode\b\s+-e\b/,
 ];
+
+// PolinRider disguises its font carrier under Font-Awesome filenames (the exact
+// names real Font Awesome ships: fa-brands-400, fa-solid-900, fa-regular-400, …).
+// Presence of these names is a disguise indicator; content (see fonts.js) decides
+// whether a given file is an actual payload or just a legitimate Font Awesome font.
+export const FA_FONT_NAME_RE =
+  /^fa-(?:brands|solid|regular|light|thin|duotone)-\d+\.(?:eot|svg|ttf|otf|woff2?)$/i;
+
+// Files the malware drops alongside its font carrier that should go with it.
+export const FONT_DROP_SIDECARS = ["readme.md"];
 
 // Directories where the font-carrier variant is dropped.
 export const FONT_DIRS = ["public/fonts", "static", "static/fonts", "assets/fonts", "src/assets/fonts"];
@@ -228,4 +245,14 @@ export function isFetchToShell(text) {
 export function commandExecutesAsset(text) {
   if (typeof text !== "string") return false;
   return INTERPRETER_RE.test(text) && ASSET_EXEC_RE.test(text);
+}
+
+/** True if `basename` matches the Font-Awesome family naming the malware disguises itself as. */
+export function isFaFamilyName(basename) {
+  return typeof basename === "string" && FA_FONT_NAME_RE.test(basename);
+}
+
+/** True if `basename` is a sidecar file the malware drops with its font carrier (e.g. README.md). */
+export function isFontDropSidecar(basename) {
+  return typeof basename === "string" && FONT_DROP_SIDECARS.includes(basename.toLowerCase());
 }

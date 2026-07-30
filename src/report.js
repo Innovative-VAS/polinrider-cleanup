@@ -41,9 +41,10 @@ export function buildPrBody({ findings, result }) {
   );
   out.push("");
 
+  const REMOVAL_ACTIONS = new Set(["remove-dir", "remove-font-set", "delete-font", "remove-artifact"]);
   const fixed = [];
   for (const f of result.applied) {
-    const what = result.filesDeleted.includes(f.file) ? "removed" : "cleaned";
+    const what = REMOVAL_ACTIONS.has(f.action) || result.filesDeleted.includes(f.file) ? "removed" : "cleaned";
     fixed.push(`- \`${f.file}\`: ${what} — ${f.description ?? f.action}`);
   }
   for (const n of result.notes) fixed.push(`- ${n}`);

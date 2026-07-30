@@ -15,6 +15,7 @@ import {
   infectedConfig,
   goodFont,
   evilFont,
+  validSfnt,
 } from "./helpers.js";
 
 after(cleanupAll);
@@ -91,7 +92,7 @@ test("malicious .vscode (node executes a font on folderOpen) → detected", asyn
   assert.equal(f.severity, "infected");
 });
 
-test("suspicious font in public/fonts → whole public/fonts removal", async () => {
+test("carrier + referenced clean font in public/fonts → remove-font-set preserves the clean font", async () => {
   const repo = await makeRepo({
     "public/fonts/evil.woff2": evilFont(),
     "public/fonts/good.woff2": goodFont(),
@@ -100,8 +101,91 @@ test("suspicious font in public/fonts → whole public/fonts removal", async () 
   const f = await scanRepo(repo);
   const fontFindings = f.findings.filter((x) => x.category === "font");
   assert.equal(fontFindings.length, 1);
-  assert.equal(fontFindings[0].action, "remove-dir");
-  assert.match(fontFindings[0].file, /public[\\/]fonts$/);
+  assert.equal(fontFindings[0].action, "remove-font-set");
+  assert.equal(f.severity, "infected");
+  const removed = fontFindings[0].edit.removals.map((r) => r.rel);
+  assert.ok(removed.some((p) => /evil\.woff2$/.test(p)), "evil font removed");
+  assert.ok(!removed.some((p) => /good\.woff2$/.test(p)), "referenced clean font preserved");
+});
+
+test("infected fa font in a mixed dir → remove infected + fa-set + README, keep clean non-fa fonts", async () => {
+  const repo = await makeRepo({
+    "public/fonts/fa-solid-400.woff2": evilFont(), // JS carrier disguised as Font Awesome
+    "public/fonts/fa-brands-400.woff2": goodFont(), // clean FA sibling (still removed)
+    "public/fonts/fa-regular-400.ttf": validSfnt(), // clean FA sibling (still removed)
+    "public/fonts/README.md": "# Font Awesome",
+    "public/fonts/gill-sans/GillSans-Bold.otf": validSfnt("Copyright"), // clean, NOT fa → keep
+    "public/fonts/gill-sans/README.md": "# Gill Sans license", // nested legit README → keep
+  });
+  const f = await scanRepo(repo);
+  assert.equal(f.severity, "infected");
+  const finding = byId(f, "font.carrier-set");
+  assert.ok(finding, "expected remove-font-set finding");
+  assert.equal(finding.action, "remove-font-set");
+  assert.equal(finding.contentConfirmed, true);
+  const removed = finding.edit.removals.map((r) => r.rel);
+  assert.equal(removed.length, 4, JSON.stringify(removed));
+  for (const name of ["fa-solid-400.woff2", "fa-brands-400.woff2", "fa-regular-400.ttf", "README.md"]) {
+    assert.ok(removed.some((p) => p.endsWith(name)), `${name} should be removed`);
+  }
+  // The nested clean subdir — including its own README — must be untouched.
+  assert.ok(!removed.some((p) => p.includes("gill-sans")), "gill-sans must be preserved");
+});
+
+test("referenced file that is a JS payload (not a valid font) → manual review, never auto-deleted", async () => {
+  const repo = await makeRepo({
+    "public/fonts/webfont.woff2": evilFont(), // JS payload, but wired into the build
+    "src/app.js": `import "./public/fonts/webfont.woff2";`,
+  });
+  const f = await scanRepo(repo);
+  const finding = byId(f, "font.referenced-carrier");
+  assert.ok(finding, "referenced carrier must be surfaced, not silently trusted");
+  assert.equal(finding.action, "manual-review");
+  assert.equal(finding.contentConfirmed, false);
+  assert.equal(f.severity, "suspicious");
+  const autoRemoved = ["delete-font", "remove-font-set", "remove-dir"];
+  assert.ok(
+    !f.findings.some((x) => autoRemoved.includes(x.action)),
+    "a referenced file must never be auto-deleted",
+  );
+});
+
+test("dir of only infected + fa-set + README → whole-dir removal", async () => {
+  const repo = await makeRepo({
+    "public/fonts/fa-solid-400.woff2": evilFont(),
+    "public/fonts/fa-brands-400.woff2": goodFont(),
+    "public/fonts/README.md": "# FA",
+  });
+  const f = await scanRepo(repo);
+  assert.equal(f.severity, "infected");
+  const finding = byId(f, "font.carrier-dir");
+  assert.ok(finding, "expected whole-dir removal");
+  assert.equal(finding.action, "remove-dir");
+  assert.match(finding.edit.absPath, /public[\\/]fonts$/);
+});
+
+test("valid fa-named fonts, no payload → medium (suspicious) manual review, no removal", async () => {
+  const repo = await makeRepo({
+    "public/fonts/fa-solid-900.woff2": goodFont(),
+    "public/fonts/fa-brands-400.ttf": validSfnt(),
+  });
+  const f = await scanRepo(repo);
+  assert.equal(f.severity, "suspicious");
+  assert.equal(f.hasContentConfirmed, false);
+  const finding = byId(f, "font.review");
+  assert.ok(finding, "expected fa manual-review finding");
+  assert.equal(finding.action, "manual-review");
+  assert.equal(finding.contentConfirmed, false);
+});
+
+test("unreferenced but structurally valid non-fa fonts → clean, no findings", async () => {
+  const repo = await makeRepo({
+    "public/fonts/inter.woff2": goodFont(),
+    "public/fonts/roboto.otf": validSfnt("Copyright"),
+  });
+  const f = await scanRepo(repo);
+  assert.equal(f.severity, "clean");
+  assert.equal(f.findings.filter((x) => x.category === "font").length, 0);
 });
 
 test("artifacts + injected .gitignore lines detected", async () => {

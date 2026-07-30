@@ -66,15 +66,53 @@ export function infectedConfig(payload) {
 
 // ─── Font fixtures ──────────────────────────────────────────────────────────────
 
-/** Valid-looking WOFF2: correct magic, inert padding (no JS-like strings). */
-export function goodFont() {
-  return Buffer.concat([Buffer.from("wOF2", "latin1"), Buffer.alloc(256, 0x10)]);
+/**
+ * Structurally valid WOFF2: correct magic, a declared length that matches the
+ * actual byte length, and a non-zero table count. Inert padding.
+ */
+export function validWoff2(size = 64) {
+  const buf = Buffer.alloc(Math.max(size, 16), 0x00);
+  buf.write("wOF2", 0, "latin1");
+  buf.writeUInt32BE(0x4f54544f, 4); // flavor: OTTO
+  buf.writeUInt32BE(buf.length, 8); // total length == file size
+  buf.writeUInt16BE(4, 12); // numTables (non-zero)
+  return buf;
 }
 
-/** Fake "font": bad magic + embedded JS-like strings → suspicious. */
+/**
+ * Structurally valid OTTO sfnt with a single in-bounds table whose bytes embed
+ * `extra` text. Used to prove that a genuine font is NOT flagged even when it
+ * contains a license URL and a long base64-looking run — the exact bytes that
+ * previously produced false positives on real commercial fonts.
+ */
+export function validSfnt(extra = "") {
+  const numTables = 1;
+  const dirEnd = 12 + numTables * 16;
+  const body = Buffer.from(extra, "latin1");
+  const buf = Buffer.alloc(dirEnd + body.length, 0x00);
+  buf.write("OTTO", 0, "latin1"); // sfntVersion → otf
+  buf.writeUInt16BE(numTables, 4);
+  buf.write("CFF ", 12, "latin1"); // table tag
+  buf.writeUInt32BE(0, 16); // checksum
+  buf.writeUInt32BE(dirEnd, 20); // table offset (right after the directory)
+  buf.writeUInt32BE(body.length, 24); // table length
+  body.copy(buf, dirEnd);
+  return buf;
+}
+
+/** A real-font byte pattern that used to trip the old heuristics: a vendor URL + a long base64-ish run. */
+export const REAL_FONT_STRINGS =
+  "Copyright. http://www.monotypeimaging.com " + "A".repeat(400);
+
+/** Structurally valid font (default WOFF2), inert padding (no JS-like strings). */
+export function goodFont() {
+  return validWoff2(256);
+}
+
+/** Fake "font": no font magic + embedded JS payload → confirmed carrier. */
 export function evilFont() {
   return Buffer.from(
-    "XX!! not a real font eval(require('child_process')) fetch from https://evil.example/p",
+    "global['!']='x';var _$_1e42=[1];eval(require('child_process').toString());function(){}",
     "latin1",
   );
 }

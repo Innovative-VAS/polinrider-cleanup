@@ -700,10 +700,11 @@ var FONT_BADNESS_RES = [
   /require\s*\(/,
   /child_process/,
   /process\.(?:env|binding)/,
-  /https?:\/\//,
   /function\s*\(/,
   /\bnode\b\s+-e\b/
 ];
+var FA_FONT_NAME_RE = /^fa-(?:brands|solid|regular|light|thin|duotone)-\d+\.(?:eot|svg|ttf|otf|woff2?)$/i;
+var FONT_DROP_SIDECARS = ["readme.md"];
 var FONT_DIRS = ["public/fonts", "static", "static/fonts", "assets/fonts", "src/assets/fonts"];
 var FONT_REF_EXTENSIONS = [
   ".css",
@@ -762,6 +763,12 @@ function isFetchToShell(text) {
 function commandExecutesAsset(text) {
   if (typeof text !== "string") return false;
   return INTERPRETER_RE.test(text) && ASSET_EXEC_RE.test(text);
+}
+function isFaFamilyName(basename) {
+  return typeof basename === "string" && FA_FONT_NAME_RE.test(basename);
+}
+function isFontDropSidecar(basename) {
+  return typeof basename === "string" && FONT_DROP_SIDECARS.includes(basename.toLowerCase());
 }
 
 // src/jsonc.js
@@ -954,20 +961,66 @@ function readMagic(buf) {
   }
   return "unknown";
 }
-function looksSuspicious(buf, ext = "") {
-  const reasons = [];
-  const magic = readMagic(buf);
-  if (magic === "unknown" && !NO_RELIABLE_MAGIC.has(ext.toLowerCase())) {
-    reasons.push("no recognizable font magic bytes");
+function parseFontStructure(buf) {
+  const format2 = readMagic(buf);
+  if (format2 === "unknown") {
+    return { valid: false, format: format2, reason: "no recognizable font magic bytes" };
   }
+  if (format2 === "woff" || format2 === "woff2") {
+    if (buf.length >= 14 && buf.readUInt32BE(8) === buf.length && buf.readUInt16BE(12) > 0) {
+      return { valid: true, format: format2 };
+    }
+    return { valid: false, format: format2, reason: `malformed ${format2} header (declared length or table count invalid)` };
+  }
+  if (format2 === "ttc") {
+    if (buf.length >= 12) {
+      const numFonts = buf.readUInt32BE(8);
+      if (numFonts >= 1 && numFonts <= 256 && 12 + numFonts * 4 <= buf.length) {
+        let ok = true;
+        for (let i2 = 0; i2 < numFonts; i2++) {
+          if (buf.readUInt32BE(12 + i2 * 4) + 12 > buf.length) {
+            ok = false;
+            break;
+          }
+        }
+        if (ok) return { valid: true, format: format2 };
+      }
+    }
+    return { valid: false, format: format2, reason: "malformed TrueType Collection header" };
+  }
+  const numTables = buf.length >= 6 ? buf.readUInt16BE(4) : 0;
+  const dirEnd = 12 + numTables * 16;
+  if (numTables < 1 || numTables > 4096 || dirEnd > buf.length) {
+    return { valid: false, format: format2, reason: "malformed font table directory" };
+  }
+  for (let i2 = 0; i2 < numTables; i2++) {
+    const rec = 12 + i2 * 16;
+    if (buf.readUInt32BE(rec + 8) + buf.readUInt32BE(rec + 12) > buf.length) {
+      return { valid: false, format: format2, reason: "font table points past end of file" };
+    }
+  }
+  return { valid: true, format: format2 };
+}
+function scanCodeStrings(buf) {
   const window = buf.subarray(0, Math.min(buf.length, BYTE_SCAN_LIMIT)).toString("latin1");
-  if (FONT_BADNESS_RES.some((re) => re.test(window))) {
-    reasons.push("contains embedded code-like strings a real font never has (eval/require/URL/etc.)");
+  return FONT_BADNESS_RES.some((re) => re.test(window)) ? ["contains embedded code-like strings a real font never has (eval/require/global[/etc.)"] : [];
+}
+function looksSuspicious(buf, ext = "") {
+  if (NO_RELIABLE_MAGIC.has(ext.toLowerCase())) {
+    const reasons = scanCodeStrings(buf);
+    return { bad: reasons.length > 0, magic: readMagic(buf), reasons, hasCodeStrings: reasons.length > 0 };
   }
-  if (/[A-Za-z0-9+/]{200,}={0,2}/.test(window)) {
-    reasons.push("contains a long base64-like blob");
+  const struct = parseFontStructure(buf);
+  if (struct.valid) {
+    return { bad: false, magic: struct.format, reasons: [], hasCodeStrings: false };
   }
-  return { bad: reasons.length > 0, magic, reasons };
+  const codeReasons = scanCodeStrings(buf);
+  return {
+    bad: true,
+    magic: struct.format,
+    reasons: [struct.reason, ...codeReasons],
+    hasCodeStrings: codeReasons.length > 0
+  };
 }
 async function collectFontReferences(repoDir) {
   const files = await collectByExtension(repoDir, FONT_REF_EXTENSIONS, { exclude: REF_EXCLUDE });
@@ -1164,51 +1217,156 @@ async function detectFonts(repoDir, findings, rel, isExcluded) {
   const fontFiles = await collectByExtension(repoDir, FONT_EXTENSIONS);
   if (fontFiles.length === 0) return;
   const haystack = await collectFontReferences(repoDir);
-  const dirsToRemove = /* @__PURE__ */ new Map();
+  const groups = /* @__PURE__ */ new Map();
   const orphans = [];
+  const ensureGroup = (dir) => {
+    if (!groups.has(dir)) groups.set(dir, { confirmed: [], suspect: [] });
+    return groups.get(dir);
+  };
   for (const file of fontFiles) {
     if (isExcluded(file)) continue;
-    if (isReferenced(haystack, file)) continue;
-    let buf;
+    const isFa = isFaFamilyName(path3.basename(file));
+    let susp;
     try {
-      buf = await fs3.readFile(file);
+      susp = looksSuspicious(await fs3.readFile(file), path3.extname(file));
     } catch {
       continue;
     }
-    const susp = looksSuspicious(buf, path3.extname(file));
-    if (!susp.bad) continue;
+    const referenced = isReferenced(haystack, file);
+    const isCarrier = susp.bad && susp.hasCodeStrings;
     const dir = fontDirToRemove(repoDir, file);
+    if (referenced) {
+      if (isCarrier) {
+        findings.push({
+          id: "font.referenced-carrier",
+          category: "font",
+          file: rel(file),
+          confidence: "high",
+          action: "manual-review",
+          contentConfirmed: false,
+          description: `Referenced file that is not a valid font but contains a code payload (${susp.reasons.join("; ")}). It is imported by the build, so it is not auto-removed \u2014 review and remove it manually.`
+        });
+      }
+      if (isFa && dir) ensureGroup(dir);
+      continue;
+    }
+    if (!susp.bad && !isFa) continue;
+    const entry = { file, reasons: susp.reasons };
     if (dir) {
-      if (!dirsToRemove.has(dir)) dirsToRemove.set(dir, /* @__PURE__ */ new Set());
-      susp.reasons.forEach((r) => dirsToRemove.get(dir).add(r));
-    } else {
-      orphans.push({ file, reasons: susp.reasons });
+      const g = ensureGroup(dir);
+      if (isCarrier) g.confirmed.push(entry);
+      else if (susp.bad) g.suspect.push(entry);
+    } else if (isCarrier) {
+      orphans.push({ ...entry, kind: "carrier" });
+    } else if (susp.bad || isFa) {
+      orphans.push({ ...entry, kind: "review", isFa });
     }
   }
-  for (const [dir, reasons] of dirsToRemove) {
-    findings.push({
-      id: "font.carrier-dir",
-      category: "font",
-      file: rel(dir),
-      confidence: "high",
-      action: "remove-dir",
-      contentConfirmed: true,
-      description: `Suspicious font carrier(s) found \u2014 removing the entire ${rel(dir)} directory (${[...reasons].join("; ")})`,
-      edit: { absPath: dir }
-    });
+  for (const [dir, group] of groups) {
+    await emitFontDirFinding(dir, group, findings, rel, isExcluded);
   }
-  for (const { file, reasons } of orphans) {
-    findings.push({
-      id: "font.carrier",
-      category: "font",
-      file: rel(file),
-      confidence: "high",
-      action: "delete-font",
-      contentConfirmed: true,
-      description: `Unreferenced suspicious font: ${reasons.join("; ")}`,
-      edit: { absPath: file }
-    });
+  for (const o2 of orphans) {
+    if (o2.kind === "carrier") {
+      findings.push({
+        id: "font.carrier",
+        category: "font",
+        file: rel(o2.file),
+        confidence: "high",
+        action: "delete-font",
+        contentConfirmed: true,
+        description: `Unreferenced font carrier (JS payload): ${o2.reasons.join("; ")}`,
+        edit: { absPath: o2.file }
+      });
+    } else {
+      findings.push({
+        id: "font.review",
+        category: "font",
+        file: rel(o2.file),
+        confidence: "low",
+        action: "manual-review",
+        contentConfirmed: false,
+        description: o2.isFa ? "Font-Awesome-named font (a known PolinRider disguise) with no payload detected \u2014 review manually." : `Unreferenced file that is not a valid font (${o2.reasons.join("; ")}) \u2014 review manually.`
+      });
+    }
   }
+}
+async function listTree(dir) {
+  const allEntries = [];
+  const regularFiles = [];
+  const rec = async (d) => {
+    let entries;
+    try {
+      entries = await fs3.readdir(d, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const ent of entries) {
+      const full = path3.join(d, ent.name);
+      allEntries.push(full);
+      if (ent.isSymbolicLink()) continue;
+      if (ent.isDirectory()) await rec(full);
+      else if (ent.isFile()) regularFiles.push(full);
+    }
+  };
+  await rec(dir);
+  return { allEntries, regularFiles };
+}
+async function emitFontDirFinding(dir, group, findings, rel, isExcluded) {
+  const { allEntries, regularFiles } = await listTree(dir);
+  const faAll = regularFiles.filter((f) => !isExcluded(f) && isFaFamilyName(path3.basename(f)));
+  if (group.confirmed.length > 0) {
+    const carrierReasons = [...new Set(group.confirmed.flatMap((e) => e.reasons))].join("; ");
+    const carrierDirs = new Set(group.confirmed.map((e) => path3.dirname(e.file)));
+    const inScope = (f) => carrierDirs.has(path3.dirname(f)) && !isExcluded(f);
+    const faFiles = faAll.filter(inScope);
+    const sidecars = regularFiles.filter((f) => inScope(f) && isFontDropSidecar(path3.basename(f)));
+    const removalAbs = /* @__PURE__ */ new Set([...group.confirmed.map((e) => e.file), ...faFiles, ...sidecars]);
+    const remaining = allEntries.filter((f) => !removalAbs.has(f));
+    if (remaining.length === 0) {
+      findings.push({
+        id: "font.carrier-dir",
+        category: "font",
+        file: rel(dir),
+        confidence: "high",
+        action: "remove-dir",
+        contentConfirmed: true,
+        description: `Font carrier(s) found \u2014 removing the entire ${rel(dir)} directory (${carrierReasons})`,
+        edit: { absPath: dir }
+      });
+    } else {
+      const removals = [...removalAbs].map((abs) => ({ abs, rel: rel(abs) }));
+      findings.push({
+        id: "font.carrier-set",
+        category: "font",
+        file: rel(dir),
+        confidence: "high",
+        action: "remove-font-set",
+        contentConfirmed: true,
+        description: `Font carrier(s) in ${rel(dir)} (${carrierReasons}) \u2014 removing ${removals.length} malicious/disguise file(s): ${removals.map((r) => path3.basename(r.rel)).join(", ")}. Preserving ${remaining.length} clean entr${remaining.length === 1 ? "y" : "ies"}.`,
+        edit: { removals }
+      });
+    }
+    return;
+  }
+  const bits = [];
+  if (faAll.length) {
+    bits.push(
+      `Font-Awesome-named font(s) present (${faAll.map((f) => path3.basename(f)).join(", ")}) \u2014 a known PolinRider disguise`
+    );
+  }
+  if (group.suspect.length) {
+    bits.push(`unrecognized non-font file(s): ${group.suspect.map((e) => path3.basename(e.file)).join(", ")}`);
+  }
+  if (bits.length === 0) return;
+  findings.push({
+    id: "font.review",
+    category: "font",
+    file: rel(dir),
+    confidence: "low",
+    action: "manual-review",
+    contentConfirmed: false,
+    description: `${bits.join("; ")}. No payload detected \u2014 review manually to confirm these are legitimate.`
+  });
 }
 async function detectPackageJson(repoDir, findings, isExcluded) {
   const file = path3.join(repoDir, "package.json");
@@ -8204,6 +8362,9 @@ async function remediate(repoDir, findings, opts = {}) {
       case "remove-artifact":
         await deleteFile(f, result, dryRun);
         break;
+      case "remove-font-set":
+        await deleteFileSet(f, result, dryRun);
+        break;
       case "fix-gitignore":
         break;
       case "manual-review":
@@ -8267,6 +8428,18 @@ async function deleteFile(f, result, dryRun) {
   if (!dryRun) await fs4.rm(absPath, { force: true });
   result.applied.push(f);
   recordDeleted(result, f.file);
+}
+async function deleteFileSet(f, result, dryRun) {
+  const removals = Array.isArray(f.edit?.removals) ? f.edit.removals : [];
+  let any = false;
+  for (const { abs, rel } of removals) {
+    if (!abs || !existsSync2(abs)) continue;
+    if (!dryRun) await fs4.rm(abs, { force: true });
+    recordDeleted(result, rel);
+    any = true;
+  }
+  if (any) result.applied.push(f);
+  else result.skipped.push({ finding: f, reason: "already gone" });
 }
 async function hardenGitignore(repoDir, result, dryRun) {
   const file = path9.join(repoDir, ".gitignore");
@@ -8343,9 +8516,10 @@ function buildPrBody({ findings, result }) {
     "Automatically generated by polinrider-remover. Every change below was confirmed by a known PolinRider signature. The scanner reads files as inert text and never executes them."
   );
   out.push("");
+  const REMOVAL_ACTIONS = /* @__PURE__ */ new Set(["remove-dir", "remove-font-set", "delete-font", "remove-artifact"]);
   const fixed = [];
   for (const f of result.applied) {
-    const what = result.filesDeleted.includes(f.file) ? "removed" : "cleaned";
+    const what = REMOVAL_ACTIONS.has(f.action) || result.filesDeleted.includes(f.file) ? "removed" : "cleaned";
     fixed.push(`- \`${f.file}\`: ${what} \u2014 ${f.description ?? f.action}`);
   }
   for (const n2 of result.notes) fixed.push(`- ${n2}`);
