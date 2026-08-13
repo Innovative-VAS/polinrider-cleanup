@@ -32,6 +32,16 @@ test("allows expected subcommands, skipping leading -C/-c value options", () => 
   assert.deepEqual(assertAllowed("gh", ["pr", "create"]), { cmd: "gh", sub: "pr" });
 });
 
+test("allows amend + force-push (only the subcommand is checked, never the flags)", () => {
+  // The `amend` silent-overwrite path relies on these passing unchanged.
+  assert.deepEqual(assertAllowed("git", ["-C", "/x", "commit", "--amend", "--no-edit"]), { cmd: "git", sub: "commit" });
+  assert.deepEqual(
+    assertAllowed("git", ["-C", "/x", "push", "--force-with-lease=main:abc123", "url", "HEAD:main"]),
+    { cmd: "git", sub: "push" },
+  );
+  assert.deepEqual(assertAllowed("git", ["-C", "/x", "push", "--force", "url", "HEAD:main"]), { cmd: "git", sub: "push" });
+});
+
 test("safeExec throws synchronously (not a rejected promise) on a violation", () => {
   assert.throws(() => safeExec("node", ["-e", "1"]), CommandNotAllowedError);
 });

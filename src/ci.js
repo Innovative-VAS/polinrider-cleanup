@@ -57,6 +57,7 @@ export function resolveSettings() {
     token: input("token") || process.env.GH_TOKEN || process.env.GITHUB_TOKEN || "",
     failOn: (input("fail-on") || "infected").toLowerCase(),
     commit: bool(input("commit")), // default false
+    amend: input("amend") ? bool(input("amend")) : process.env.AMEND === "true",
     commentOnPr: commentRaw === "" ? true : bool(commentRaw),
     sarifFile: input("sarif-file") || process.env.SARIF_FILE || "",
     dryRun: input("dry-run") ? bool(input("dry-run")) : process.env.DRY_RUN === "true",
@@ -192,7 +193,11 @@ function readEvent() {
   }
 }
 
-/** fix + commit=true → commit the cleaned tree and push it back to the branch. */
+/**
+ * fix + commit=true → commit the cleaned tree and push it back to the branch.
+ * With `amend`, fold the cleanup into the existing tip commit and force-push it
+ * (silent overwrite — no visible cleanup commit); otherwise add a new commit.
+ */
 async function commitBack(repoDir, settings) {
   const event = process.env.GITHUB_EVENT_NAME || "";
   if (event.startsWith("pull_request")) {
@@ -213,25 +218,71 @@ async function commitBack(repoDir, settings) {
     warn("commit skipped — could not resolve a branch to push to (detached HEAD).");
     return false;
   }
+  // Amending rewrites the tip commit, so its parent must be present locally —
+  // otherwise a force-push from a shallow checkout collapses the branch to a single
+  // root commit, destroying history. actions/checkout defaults to fetch-depth: 1.
+  if (settings.amend) {
+    const shallow = (await safeGit(["-C", repoDir, "rev-parse", "--is-shallow-repository"])).stdout.trim();
+    if (shallow === "true") {
+      warn("amend needs full history to avoid destroying it — set `fetch-depth: 0` on actions/checkout (or drop `amend` for a normal cleanup commit, or use mode: pr).");
+      return false;
+    }
+  }
+
   await configureIdentity(repoDir);
+
+  // For amend, capture the pre-cleanup tip SHA up front — it pins the lease to the
+  // exact malicious commit we're overwriting.
+  const origHead = settings.amend
+    ? (await safeGit(["-C", repoDir, "rev-parse", "HEAD"])).stdout.trim()
+    : null;
+
   await safeGit(["-C", repoDir, "add", "-A"]);
   const staged = await safeGit(["-C", repoDir, "diff", "--cached", "--name-only"]);
   if (!staged.stdout.trim()) return false;
-  const commit = await safeGit([
-    "-C", repoDir, "commit", "-m",
-    "security: remove PolinRider malware artifacts\n\nAutomated cleanup by the polinrider-cleanup action.",
-  ]);
+
+  const commitArgs = settings.amend
+    // Fold into tip, keep message/author. --allow-empty: when the infected tip was
+    // pure payload, stripping it leaves the tip identical to its parent — we still
+    // want that (empty) commit so the branch tip carries the cleaned tree.
+    ? ["-C", repoDir, "commit", "--amend", "--no-edit", "--allow-empty"]
+    : ["-C", repoDir, "commit", "-m",
+        "security: remove PolinRider malware artifacts\n\nAutomated cleanup by the polinrider-cleanup action."];
+  const commit = await safeGit(commitArgs);
   if (commit.exitCode !== 0) {
     warn(`commit failed: ${oneLine(commit.stderr)}`);
     return false;
   }
-  const push = await safeGit(["-C", repoDir, "push", tokenUrl(fullName, settings.token), `HEAD:${branch}`]);
+
+  const push = settings.amend
+    ? await forcePush(repoDir, fullName, settings.token, branch, origHead)
+    : await safeGit(["-C", repoDir, "push", tokenUrl(fullName, settings.token), `HEAD:${branch}`]);
   if (push.exitCode !== 0) {
     warn(`push to ${branch} failed (protected branch?): ${oneLine(push.stderr)}`);
     return false;
   }
-  notice(`Cleaned files committed and pushed to ${branch}.`);
+  notice(
+    settings.amend
+      ? `Cleaned files amended into HEAD and force-pushed to ${branch}.`
+      : `Cleaned files committed and pushed to ${branch}.`,
+  );
   return true;
+}
+
+/**
+ * Force-push the amended tip to `branch`, mirroring the silent way the payload was
+ * injected. Prefer --force-with-lease pinned to `origHead` (the malicious commit) so
+ * the overwrite lands only if the remote is still at it; fall back to a plain --force
+ * when the lease is rejected (e.g. no matching remote-tracking ref).
+ */
+async function forcePush(repoDir, fullName, token, branch, origHead) {
+  const url = tokenUrl(fullName, token);
+  const lease = await safeGit([
+    "-C", repoDir, "push", `--force-with-lease=${branch}:${origHead}`, url, `HEAD:${branch}`,
+  ]);
+  if (lease.exitCode === 0) return lease;
+  warn(`--force-with-lease rejected (${oneLine(lease.stderr)}); retrying with --force.`);
+  return safeGit(["-C", repoDir, "push", "--force", url, `HEAD:${branch}`]);
 }
 
 /** pr mode → new branch, commit, push, open PR. Mirrors index.js openPR(). */
@@ -316,7 +367,8 @@ export async function run() {
     result = await remediate(repoDir, findings, { dryRun: settings.dryRun });
     changed = result.changed;
 
-    if (settings.mode === "fix" && settings.commit && !settings.dryRun && changed) {
+    // `amend` implies commit-back, so `mode: fix` + `amend: true` is enough.
+    if (settings.mode === "fix" && (settings.commit || settings.amend) && !settings.dryRun && changed) {
       await commitBack(repoDir, settings);
     }
 

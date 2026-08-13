@@ -12,6 +12,7 @@ and opens a PR per infected repo — all inside an isolated Docker container.
 - [What it does](#what-it-does)
 - [Use as a GitHub Action](#use-as-a-github-action)
   - [Modes](#modes)
+  - [Silent overwrite (`amend`)](#silent-overwrite-amend)
   - [Enforce it (block infected merges)](#enforce-it-block-infected-merges)
   - [Permissions](#permissions)
   - [Reporting](#reporting)
@@ -76,6 +77,48 @@ jobs:
 
 Ready-to-copy workflows live in [`examples/`](examples/).
 
+### Silent overwrite (`amend`)
+
+By default `fix` + `commit` adds a **new** `security: remove PolinRider malware
+artifacts` commit. Sometimes you want the payload gone with **no visible cleanup
+commit** — overwriting it the same silent way it was injected. Set `amend: true`
+(it implies commit-back, so `mode: fix` alone is enough):
+
+```yaml
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0         # REQUIRED — see below
+      - uses: Innovative-VAS/polinrider-cleanup@v1
+        with:
+          mode: fix
+          amend: true            # fold cleanup into the tip commit, then force-push
+          token: ${{ secrets.GITHUB_TOKEN }}
+```
+
+Instead of a new commit, it runs `git commit --amend --no-edit` (keeping the tip
+commit's original message and author) and **force-pushes** the result — so the branch
+history shows no trace of either the infection or the fix. The push uses
+`--force-with-lease` **pinned to the exact infected commit** it just cleaned, so it
+won't clobber an unexpected remote state; only if that lease is rejected does it fall
+back to a plain `--force`.
+
+> **You must check out full history (`fetch-depth: 0`).** `actions/checkout` defaults
+> to a shallow `fetch-depth: 1`, where the tip commit has no local parent — amending
+> and force-pushing that would **collapse the branch to a single root commit and
+> destroy your history**. To prevent that, `amend` **refuses to run on a shallow
+> checkout** (it logs a warning and makes no changes). Set `fetch-depth: 0` so the
+> parent history is present and only the tip is rewritten.
+
+It's off by default and, like all remediation, fires only on a **content-confirmed**
+infection that actually changed files. It needs `contents: write` **and force-push
+allowed on the branch** (a protected branch that forbids force-pushes will reject it).
+Same as commit-back, it runs on **push events only** (see [Notes & limits](#notes--limits)).
+
+> ⚠️ This rewrites published history. Anyone with the branch checked out will need to
+> reset/re-clone. Prefer `mode: pr` when you want a reviewable change instead.
+
+Full workflow: [`examples/fix-silent.yml`](examples/fix-silent.yml).
+
 ### Enforce it (block infected merges)
 
 `check` exits `1` on a confirmed infection. To turn that into a merge gate, add the
@@ -91,6 +134,7 @@ Grant the least your mode needs:
 | `check` (no PR comment) | `contents: read` |
 | PR comment (any mode) | `pull-requests: write` |
 | `fix` + `commit: true` | `contents: write` |
+| `fix` + `amend: true` | `contents: write` (+ force-push allowed on the branch) |
 | `pr` | `contents: write` + `pull-requests: write` |
 | `sarif-file` upload | `security-events: write` |
 
@@ -144,6 +188,7 @@ as possible; anything excluded is a blind spot.
 | `token` | `${{ github.token }}` | Token for `pr` mode, `fix`+`commit`, and PR comments |
 | `fail-on` | `infected` | Severity that fails the job: `infected` · `suspicious` · `never` |
 | `commit` | `false` | `fix` mode: commit + push the cleanup back (push events) |
+| `amend` | `false` | `fix` mode: amend the cleanup into the tip commit and force-push (silent overwrite — no new commit). Implies commit-back. Also reads `AMEND`. |
 | `comment-on-pr` | `true` | Post the report as a PR comment on `pull_request` events |
 | `sarif-file` | *(off)* | Write a SARIF report to this path |
 | `dry-run` | `false` | Plan changes without writing/pushing |
@@ -152,7 +197,8 @@ as possible; anything excluded is a blind spot.
 | `branch-prefix` | `fix/polinrider-cleanup` | `pr` mode branch prefix |
 
 Several inputs also read a legacy **env var** as a fallback (`DRY_RUN`,
-`AUTO_MERGE`, `MERGE_METHOD`, `BRANCH_PREFIX`, `POLINRIDER_EXCLUDE`, `SARIF_FILE`),
+`AUTO_MERGE`, `MERGE_METHOD`, `BRANCH_PREFIX`, `POLINRIDER_EXCLUDE`, `SARIF_FILE`,
+`AMEND`),
 so you can set them in a workflow/job `env:` block instead of `with:` — handy for
 sharing config across steps. An explicit `with:` value always wins. For a custom
 token use `with: token:` (it defaults to `${{ github.token }}`):
@@ -312,6 +358,7 @@ npm run test:hardened
 | `DRY_RUN` | `false` | Skip push and PR |
 | `AUTO_MERGE` | `false` | Auto-merge each cleanup PR after opening it. Respects branch protection (blocked PRs stay open and are reported). |
 | `MERGE_METHOD` | `squash` | Merge method when `AUTO_MERGE=true`: `squash`, `merge`, or `rebase`. |
+| `AMEND` | `false` | **Silent overwrite instead of a PR.** Amend the cleanup into each repo's tip commit and force-push it to the default branch (`--force-with-lease` pinned to the infected commit, falling back to `--force`) — no branch, no PR, no visible cleanup commit. Requires force-push rights and **bypasses the PR review flow** (see [PR branch protection](#pr-branch-protection)). |
 | `REPORTS_DIR` | `reports` | Where JSON + Markdown run reports are written. Set empty to disable. |
 | `WORKSPACE` | `/workspace` | Where repos are cloned |
 | `BRANCH_PREFIX` | `fix/polinrider-cleanup` | PR branch name prefix |
@@ -335,6 +382,11 @@ Because your org has branch protection enforced, the tool:
 - Creates a **new branch** per repo (never pushes to `main` or `master` directly)
 - Opens a PR for review — a human merges it
 - PR body explains exactly what was changed and why
+
+> **`AMEND=true` deliberately opts out of this.** It amends the cleanup into the tip
+> commit and force-pushes the default branch directly — no branch, no PR, no visible
+> cleanup commit. Use it only when a silent overwrite is what you want; it needs
+> force-push rights on the branch and rewrites published history.
 
 ---
 

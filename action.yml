@@ -31,6 +31,10 @@ inputs:
     description: 'In fix mode, commit and push the cleaned files back to the branch (push events only).'
     required: false
     default: 'false'
+  amend:
+    # No action default on purpose: omitting it lets the AMEND env var apply.
+    description: 'In fix mode, amend the cleanup into the existing commit and force-push (--force-with-lease, falls back to --force) instead of adding a new commit — a silent overwrite with no visible cleanup commit. Implies commit-back. Also reads the AMEND env var. Requires contents: write and force-push rights on the branch. Default: false.'
+    required: false
   comment-on-pr:
     description: 'Post the scan report as a comment on pull_request events (needs pull-requests: write).'
     required: false

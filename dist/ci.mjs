@@ -8635,6 +8635,7 @@ function resolveSettings() {
     failOn: (input("fail-on") || "infected").toLowerCase(),
     commit: bool(input("commit")),
     // default false
+    amend: input("amend") ? bool(input("amend")) : process.env.AMEND === "true",
     commentOnPr: commentRaw === "" ? true : bool(commentRaw),
     sarifFile: input("sarif-file") || process.env.SARIF_FILE || "",
     dryRun: input("dry-run") ? bool(input("dry-run")) : process.env.DRY_RUN === "true",
@@ -8765,28 +8766,53 @@ async function commitBack(repoDir, settings) {
     warn("commit skipped \u2014 could not resolve a branch to push to (detached HEAD).");
     return false;
   }
+  if (settings.amend) {
+    const shallow = (await safeGit(["-C", repoDir, "rev-parse", "--is-shallow-repository"])).stdout.trim();
+    if (shallow === "true") {
+      warn("amend needs full history to avoid destroying it \u2014 set `fetch-depth: 0` on actions/checkout (or drop `amend` for a normal cleanup commit, or use mode: pr).");
+      return false;
+    }
+  }
   await configureIdentity(repoDir);
+  const origHead = settings.amend ? (await safeGit(["-C", repoDir, "rev-parse", "HEAD"])).stdout.trim() : null;
   await safeGit(["-C", repoDir, "add", "-A"]);
   const staged = await safeGit(["-C", repoDir, "diff", "--cached", "--name-only"]);
   if (!staged.stdout.trim()) return false;
-  const commit = await safeGit([
+  const commitArgs = settings.amend ? ["-C", repoDir, "commit", "--amend", "--no-edit", "--allow-empty"] : [
     "-C",
     repoDir,
     "commit",
     "-m",
     "security: remove PolinRider malware artifacts\n\nAutomated cleanup by the polinrider-cleanup action."
-  ]);
+  ];
+  const commit = await safeGit(commitArgs);
   if (commit.exitCode !== 0) {
     warn(`commit failed: ${oneLine(commit.stderr)}`);
     return false;
   }
-  const push = await safeGit(["-C", repoDir, "push", tokenUrl(fullName, settings.token), `HEAD:${branch}`]);
+  const push = settings.amend ? await forcePush(repoDir, fullName, settings.token, branch, origHead) : await safeGit(["-C", repoDir, "push", tokenUrl(fullName, settings.token), `HEAD:${branch}`]);
   if (push.exitCode !== 0) {
     warn(`push to ${branch} failed (protected branch?): ${oneLine(push.stderr)}`);
     return false;
   }
-  notice(`Cleaned files committed and pushed to ${branch}.`);
+  notice(
+    settings.amend ? `Cleaned files amended into HEAD and force-pushed to ${branch}.` : `Cleaned files committed and pushed to ${branch}.`
+  );
   return true;
+}
+async function forcePush(repoDir, fullName, token, branch, origHead) {
+  const url = tokenUrl(fullName, token);
+  const lease = await safeGit([
+    "-C",
+    repoDir,
+    "push",
+    `--force-with-lease=${branch}:${origHead}`,
+    url,
+    `HEAD:${branch}`
+  ]);
+  if (lease.exitCode === 0) return lease;
+  warn(`--force-with-lease rejected (${oneLine(lease.stderr)}); retrying with --force.`);
+  return safeGit(["-C", repoDir, "push", "--force", url, `HEAD:${branch}`]);
 }
 async function openCleanupPr(repoDir, settings, findings, result) {
   const fullName = process.env.GITHUB_REPOSITORY;
@@ -8861,7 +8887,7 @@ async function run() {
   if ((settings.mode === "fix" || settings.mode === "pr") && findings.severity === "infected") {
     result = await remediate(repoDir, findings, { dryRun: settings.dryRun });
     changed = result.changed;
-    if (settings.mode === "fix" && settings.commit && !settings.dryRun && changed) {
+    if (settings.mode === "fix" && (settings.commit || settings.amend) && !settings.dryRun && changed) {
       await commitBack(repoDir, settings);
     }
     if (settings.mode === "pr" && !settings.dryRun) {

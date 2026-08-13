@@ -29,7 +29,7 @@ after(cleanupAll);
 const MANAGED = [
   "GITHUB_WORKSPACE", "GITHUB_OUTPUT", "GITHUB_STEP_SUMMARY", "GITHUB_EVENT_NAME",
   "GITHUB_EVENT_PATH", "GITHUB_REPOSITORY", "GITHUB_REF_NAME",
-  "DRY_RUN", "AUTO_MERGE", "MERGE_METHOD", "BRANCH_PREFIX", "GH_TOKEN", "GITHUB_TOKEN", "SARIF_FILE",
+  "DRY_RUN", "AUTO_MERGE", "MERGE_METHOD", "BRANCH_PREFIX", "GH_TOKEN", "GITHUB_TOKEN", "SARIF_FILE", "AMEND",
 ];
 function clearEnv() {
   for (const k of Object.keys(process.env)) if (k.startsWith("INPUT_")) delete process.env[k];
@@ -83,17 +83,19 @@ test("resolveSettings: defaults", () => {
   assert.equal(s.scanPath, ".");
   assert.equal(s.failOn, "infected");
   assert.equal(s.commit, false);
+  assert.equal(s.amend, false);
   assert.equal(s.commentOnPr, true);
   assert.equal(s.mergeMethod, "squash");
   assert.equal(s.branchPrefix, "fix/polinrider-cleanup");
 });
 
 test("resolveSettings: INPUT_* parsing incl. hyphenated names", () => {
-  setInputs({ mode: "FIX", "fail-on": "Suspicious", commit: "true", "comment-on-pr": "false", "merge-method": "REBASE" });
+  setInputs({ mode: "FIX", "fail-on": "Suspicious", commit: "true", amend: "true", "comment-on-pr": "false", "merge-method": "REBASE" });
   const s = resolveSettings();
   assert.equal(s.mode, "fix");
   assert.equal(s.failOn, "suspicious");
   assert.equal(s.commit, true);
+  assert.equal(s.amend, true);
   assert.equal(s.commentOnPr, false);
   assert.equal(s.mergeMethod, "rebase");
 });
@@ -101,10 +103,12 @@ test("resolveSettings: INPUT_* parsing incl. hyphenated names", () => {
 test("resolveSettings: legacy env fallback + INPUT precedence", () => {
   process.env.DRY_RUN = "true";
   process.env.AUTO_MERGE = "true";
+  process.env.AMEND = "true";
   process.env.GH_TOKEN = "legacy-token";
   let s = resolveSettings();
   assert.equal(s.dryRun, true);
   assert.equal(s.autoMerge, true);
+  assert.equal(s.amend, true);
   assert.equal(s.token, "legacy-token");
   // An explicit input wins over the token env var.
   setInputs({ token: "input-token" });

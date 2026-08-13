@@ -1,0 +1,28 @@
+# Silently overwrite the malware the same way it was injected — no visible fix commit.
+# `amend: true` folds the cleanup into the existing tip commit and force-pushes it
+# (--force-with-lease, falling back to --force), so the branch history gains no
+# "security: remove PolinRider…" commit. Use where you want the payload gone without
+# a paper trail of the cleanup. Needs contents: write AND force-push allowed on the
+# branch (loosen branch protection or run this with a token that can force-push).
+# Rewrites published history — coordinate with anyone who has the branch checked out.
+name: PolinRider silent clean
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write # required to force-push the amended commit
+
+jobs:
+  clean:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # REQUIRED for amend: the default shallow checkout would
+                         # collapse history on force-push, so amend refuses it.
+      - uses: Innovative-VAS/polinrider-cleanup@v1
+        with:
+          mode: fix
+          amend: true # implies commit-back; overwrites the tip, no new commit
+          token: ${{ secrets.GITHUB_TOKEN }}

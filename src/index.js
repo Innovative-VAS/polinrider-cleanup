@@ -31,7 +31,7 @@ import { hardeningStatus } from "./safety.js";
 // ─── Config (resolved inside main() so importing this module is side-effect-free) ─
 
 let ACCOUNT, TOKEN, DRY_RUN, WORKSPACE, BRANCH_PREFIX;
-let AUTO_MERGE, MERGE_METHOD, REPORTS_DIR, reportBase, reportStamp;
+let AUTO_MERGE, MERGE_METHOD, AMEND, REPORTS_DIR, reportBase, reportStamp;
 let reportWarned = false;
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -79,7 +79,11 @@ async function cloneRepo(fullName) {
   if (existsSync(dest)) await fs.rm(dest, { recursive: true, force: true });
 
   const url = `https://x-access-token:${TOKEN}@github.com/${fullName}.git`;
-  const clone = await safeGit(["clone", "--depth=1", url, dest]);
+  // AMEND rewrites the tip commit: we need its parent present locally, or a
+  // force-push from a depth=1 clone would collapse the branch to a single root
+  // commit. depth=2 keeps the parent (the rest of history stays on the remote).
+  const depth = AMEND ? 2 : 1;
+  const clone = await safeGit(["clone", `--depth=${depth}`, url, dest]);
   if (clone.exitCode !== 0) throw new Error(`clone failed: ${clone.stderr}`);
 
   await safeGit(["-C", dest, "config", "user.email", "polinrider-cleanup-bot@users.noreply.github.com"]);
@@ -131,6 +135,36 @@ async function openPR(repoDir, fullName, findings, result) {
   }
   if (merge.exitCode === 0) return { url, merged: true, mergeError: null };
   return { url, merged: false, mergeError: (merge.stderr || merge.stdout || "merge failed").trim().split("\n")[0] };
+}
+
+// AMEND mode: fold the cleanup into the existing tip commit and force-push it,
+// silently overwriting the payload the same way it was injected — no new branch,
+// no PR, no visible cleanup commit. Bypasses the review flow by design (opt-in).
+async function silentOverwrite(repoDir, fullName) {
+  const branch = (await safeGit(["-C", repoDir, "rev-parse", "--abbrev-ref", "HEAD"])).stdout.trim();
+  if (!branch || branch === "HEAD") throw new Error("could not resolve the default branch to overwrite (detached HEAD)");
+
+  // The pre-cleanup tip is the malicious commit currently on the remote — pin the
+  // lease to it so the force-push lands only if nothing else has moved the branch.
+  const origHead = (await safeGit(["-C", repoDir, "rev-parse", "HEAD"])).stdout.trim();
+
+  await safeGit(["-C", repoDir, "add", "-A"]);
+  const staged = await safeGit(["-C", repoDir, "diff", "--cached", "--name-only"]);
+  if (!staged.stdout.trim()) return { skipped: true, reason: "no staged changes after remediation" };
+
+  // --allow-empty: a pure-payload tip becomes identical to its parent once stripped;
+  // keep the (empty) tip commit so the branch still carries the cleaned tree.
+  const commit = await safeGit(["-C", repoDir, "commit", "--amend", "--no-edit", "--allow-empty"]);
+  if (commit.exitCode !== 0) throw new Error(`amend failed: ${commit.stderr}`);
+
+  const url = `https://x-access-token:${TOKEN}@github.com/${fullName}.git`;
+  let push = await safeGit([
+    "-C", repoDir, "push", `--force-with-lease=${branch}:${origHead}`, url, `HEAD:${branch}`,
+  ]);
+  if (push.exitCode !== 0) push = await safeGit(["-C", repoDir, "push", "--force", url, `HEAD:${branch}`]);
+  if (push.exitCode !== 0) throw new Error(`force-push failed: ${push.stderr}`);
+
+  return { branch };
 }
 
 // ─── Resolve target repos ──────────────────────────────────────────────────────
@@ -195,6 +229,7 @@ export async function main() {
     console.error(chalk.red(`✖ MERGE_METHOD must be squash|merge|rebase (got "${MERGE_METHOD}")`));
     process.exit(2);
   }
+  AMEND = process.env.AMEND === "true";
   REPORTS_DIR = process.env.REPORTS_DIR ?? "reports"; // set empty to disable
   reportStamp = new Date();
   reportBase = REPORTS_DIR
@@ -217,7 +252,7 @@ export async function main() {
 
   await fs.mkdir(WORKSPACE, { recursive: true });
 
-  const results = { total: 0, clean: 0, infected: 0, remediated: 0, prOpened: 0, merged: 0, manualOnly: 0, errors: [], prs: [], repos: [] };
+  const results = { total: 0, clean: 0, infected: 0, remediated: 0, prOpened: 0, merged: 0, overwritten: 0, manualOnly: 0, errors: [], prs: [], overwrites: [], repos: [] };
 
   const repos = await resolveTargetRepos();
   results.total = repos.length;
@@ -226,7 +261,7 @@ export async function main() {
     const repoName = fullName.split("/")[1];
     section(fullName);
     let repoDir;
-    const record = { repo: fullName, severity: null, findings: [], deleted: [], modified: [], notes: [], manualReview: [], pr: null, error: null };
+    const record = { repo: fullName, severity: null, findings: [], deleted: [], modified: [], notes: [], manualReview: [], pr: null, overwrite: null, error: null };
     try {
       const cloneSpinner = ora("  Cloning...").start();
       repoDir = await cloneRepo(fullName);
@@ -267,21 +302,34 @@ export async function main() {
       }
       results.remediated++;
 
-      const prSpinner = ora("  Creating PR...").start();
-      const pr = await openPR(repoDir, fullName, findings, result);
-      if (pr.skipped) {
-        prSpinner.warn(`  Skipped PR: ${pr.reason}`);
-      } else {
-        record.pr = { url: pr.url, merged: pr.merged, mergeError: pr.mergeError };
-        results.prOpened++;
-        results.prs.push({ repo: fullName, url: pr.url, merged: pr.merged });
-        if (pr.merged) {
-          results.merged++;
-          prSpinner.succeed("  " + chalk.green.bold(`PR merged: ${pr.url}`));
-        } else if (pr.mergeError) {
-          prSpinner.warn("  " + chalk.yellow(`PR opened — auto-merge blocked (${pr.mergeError}); merge manually: ${pr.url}`));
+      if (AMEND) {
+        const owSpinner = ora("  Overwriting (amend + force-push)...").start();
+        const ow = await silentOverwrite(repoDir, fullName);
+        if (ow.skipped) {
+          owSpinner.warn(`  Skipped overwrite: ${ow.reason}`);
         } else {
-          prSpinner.succeed("  " + chalk.blue.bold(`PR opened: ${pr.url}`));
+          record.overwrite = { branch: ow.branch };
+          results.overwritten++;
+          results.overwrites.push({ repo: fullName, branch: ow.branch });
+          owSpinner.succeed("  " + chalk.magenta.bold(`Silently overwritten — force-pushed to ${ow.branch}`));
+        }
+      } else {
+        const prSpinner = ora("  Creating PR...").start();
+        const pr = await openPR(repoDir, fullName, findings, result);
+        if (pr.skipped) {
+          prSpinner.warn(`  Skipped PR: ${pr.reason}`);
+        } else {
+          record.pr = { url: pr.url, merged: pr.merged, mergeError: pr.mergeError };
+          results.prOpened++;
+          results.prs.push({ repo: fullName, url: pr.url, merged: pr.merged });
+          if (pr.merged) {
+            results.merged++;
+            prSpinner.succeed("  " + chalk.green.bold(`PR merged: ${pr.url}`));
+          } else if (pr.mergeError) {
+            prSpinner.warn("  " + chalk.yellow(`PR opened — auto-merge blocked (${pr.mergeError}); merge manually: ${pr.url}`));
+          } else {
+            prSpinner.succeed("  " + chalk.blue.bold(`PR opened: ${pr.url}`));
+          }
         }
       }
     } catch (err) {
@@ -311,10 +359,11 @@ async function writeReports(results) {
     dryRun: DRY_RUN,
     autoMerge: AUTO_MERGE,
     mergeMethod: MERGE_METHOD,
+    amend: AMEND,
     totals: {
       total: results.total, clean: results.clean, infected: results.infected,
       remediated: results.remediated, merged: results.merged, prOpened: results.prOpened,
-      manualOnly: results.manualOnly, errors: results.errors.length,
+      overwritten: results.overwritten, manualOnly: results.manualOnly, errors: results.errors.length,
     },
     repos: results.repos,
   };
@@ -342,7 +391,8 @@ function printSummary(results) {
   console.log(`  ${chalk.green.bold("Clean:")}            ${results.clean}`);
   console.log(`  ${chalk.red.bold("Infected:")}         ${results.infected}`);
   console.log(`  ${chalk.magenta.bold("Remediated:")}       ${results.remediated}`);
-  console.log(`  ${chalk.blue.bold("PRs opened:")}       ${results.prOpened}`);
+  if (AMEND) console.log(`  ${chalk.magenta.bold("Overwritten:")}      ${results.overwritten}`);
+  else console.log(`  ${chalk.blue.bold("PRs opened:")}       ${results.prOpened}`);
   if (AUTO_MERGE) console.log(`  ${chalk.green.bold("PRs merged:")}       ${results.merged}`);
   if (results.manualOnly) console.log(`  ${chalk.yellow.bold("Manual review:")}    ${results.manualOnly}`);
 
@@ -351,6 +401,12 @@ function printSummary(results) {
     for (const { repo, url, merged } of results.prs) {
       const mark = merged ? chalk.green("✔ merged") : chalk.blue("⎇ open");
       console.log(`    ${mark} ${chalk.bold(repo)}\n      ${url}`);
+    }
+  }
+  if (results.overwrites.length) {
+    console.log("\n" + chalk.bold("  Silently overwritten (force-push, no PR):"));
+    for (const { repo, branch } of results.overwrites) {
+      console.log(`    ${chalk.magenta("⇈ pushed")} ${chalk.bold(repo)} → ${branch}`);
     }
   }
   if (results.errors.length) {

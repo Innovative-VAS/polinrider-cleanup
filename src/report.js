@@ -77,11 +77,11 @@ export { PR_TITLE };
 // ─── Whole-run report (persisted to the reports volume) ─────────────────────────
 //
 // A `run` object is assembled by the orchestrator:
-//   { scannedAt, scannedAtHuman, account:{kind,owner}, dryRun, autoMerge, mergeMethod,
-//     totals:{total,clean,infected,remediated,merged,prOpened,manualOnly,errors},
+//   { scannedAt, scannedAtHuman, account:{kind,owner}, dryRun, autoMerge, mergeMethod, amend,
+//     totals:{total,clean,infected,remediated,merged,prOpened,overwritten,manualOnly,errors},
 //     repos:[ { repo, severity, findings:[{file,action,confidence,contentConfirmed,description}],
 //               deleted:[], modified:[], notes:[], manualReview:[],
-//               pr:{url,merged,mergeError}|null, error:string|null } ] }
+//               pr:{url,merged,mergeError}|null, overwrite:{branch}|null, error:string|null } ] }
 
 /** Machine-readable run report. */
 export function buildRunJson(run) {
@@ -118,7 +118,8 @@ export function buildRunMarkdown(run) {
   out.push(`| Clean | ${t.clean} |`);
   out.push(`| Infected | ${t.infected} |`);
   out.push(`| Remediated | ${t.remediated} |`);
-  out.push(`| PRs opened | ${t.prOpened} |`);
+  if (run.amend) out.push(`| Silently overwritten | ${t.overwritten ?? 0} |`);
+  else out.push(`| PRs opened | ${t.prOpened} |`);
   if (run.autoMerge) out.push(`| PRs merged | ${t.merged} |`);
   out.push(`| Needs manual review | ${t.manualOnly} |`);
   out.push(`| Errors | ${t.errors} |`);
@@ -143,12 +144,27 @@ export function buildRunMarkdown(run) {
     out.push("");
   }
 
+  const overwritten = run.repos.filter((r) => r.overwrite && r.overwrite.branch);
+  if (overwritten.length) {
+    out.push(`## Silently overwritten (${overwritten.length})`);
+    out.push("");
+    out.push("Force-pushed over the malicious tip — no cleanup commit, no PR. Verify each branch is clean.");
+    out.push("");
+    out.push("| Repository | Branch | Changes |");
+    out.push("| --- | --- | --- |");
+    for (const r of overwritten) {
+      const name = r.repo.split("/")[1] ?? r.repo;
+      out.push(`| [${name}](https://github.com/${r.repo}) | \`${r.overwrite.branch}\` | ${repoChangeSummary(r)} |`);
+    }
+    out.push("");
+  }
+
   const attention = run.repos.filter(
     (r) =>
       r.error ||
       (r.pr && r.pr.mergeError) ||
       (r.manualReview && r.manualReview.length) ||
-      (r.severity === "infected" && !(r.pr && r.pr.url) && !run.dryRun),
+      (r.severity === "infected" && !(r.pr && r.pr.url) && !r.overwrite && !run.dryRun),
   );
   if (attention.length) {
     out.push("## Needs attention");
@@ -158,7 +174,7 @@ export function buildRunMarkdown(run) {
       if (r.error) bits.push(`error: ${r.error}`);
       if (r.pr && r.pr.mergeError) bits.push(`auto-merge blocked: ${r.pr.mergeError}`);
       if (r.manualReview?.length) bits.push(`manual review: ${r.manualReview.join("; ")}`);
-      if (r.severity === "infected" && !(r.pr && r.pr.url) && !run.dryRun && !r.error)
+      if (r.severity === "infected" && !(r.pr && r.pr.url) && !r.overwrite && !run.dryRun && !r.error)
         bits.push("infected but no automated fix applied");
       out.push(`- **${r.repo}** — ${bits.join(" · ").replace(/\s+/g, " ").trim()}`);
     }
