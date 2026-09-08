@@ -29,6 +29,7 @@ import { fileURLToPath } from "node:url";
 import { scanRepo } from "./scanner.js";
 import { remediate } from "./remediator.js";
 import { buildPrBody, PR_TITLE, findingLines, resultLines } from "./report.js";
+import { findingStartLine } from "./lines.js";
 import { safeGit, safeGh } from "./safe-exec.js";
 import { buildSarif } from "./sarif.js";
 
@@ -113,19 +114,6 @@ export function failThreshold(failOn) {
   return SEVERITY_RANK.infected; // default + "infected"
 }
 
-/** 1-based line for a finding that carries a char offset (js payloads), else 1. */
-function findingLine(repoDir, f) {
-  const offset = f.edit?.offset;
-  if (!(offset > 0)) return 1;
-  try {
-    const text = fs.readFileSync(path.join(repoDir, f.file), "utf8");
-    if (offset > text.length) return 1;
-    return text.slice(0, offset).split("\n").length;
-  } catch {
-    return 1;
-  }
-}
-
 /** Repo-root-relative path so GitHub maps the annotation onto the PR diff. */
 function annotationPath(workspace, repoDir, relFile) {
   return path.relative(workspace, path.join(repoDir, relFile)) || relFile;
@@ -135,7 +123,7 @@ function emitAnnotations(workspace, repoDir, findings) {
   for (const f of findings.findings) {
     annotate(f.contentConfirmed ? "error" : "warning", {
       file: annotationPath(workspace, repoDir, f.file),
-      line: findingLine(repoDir, f),
+      line: findingStartLine(repoDir, f),
       title: f.contentConfirmed ? "PolinRider malware" : "PolinRider (review)",
       message: f.description,
     });
@@ -363,7 +351,9 @@ export async function run() {
   let prUrl = "";
   let changed = false;
 
-  if ((settings.mode === "fix" || settings.mode === "pr") && findings.severity === "infected") {
+  const shouldRemediate =
+    findings.severity === "infected" || findings.hasAutoFixable === true;
+  if ((settings.mode === "fix" || settings.mode === "pr") && shouldRemediate) {
     result = await remediate(repoDir, findings, { dryRun: settings.dryRun });
     changed = result.changed;
 

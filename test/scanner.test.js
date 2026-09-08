@@ -12,7 +12,18 @@ import {
   ORIGINAL_PAYLOAD,
   ROTATED_PAYLOAD,
   GENERIC_PAYLOAD,
+  LOW_SIGNAL_TAIL,
   infectedConfig,
+  infectedDotNotation,
+  DOT_NOTATION_PAYLOAD,
+  LEGIT_SHIM_CONFIG,
+  ORPHAN_SHIM_CONFIG,
+  HARMLESS_TAIL,
+  MAIN_GUARD_TAIL,
+  COMMENTED_EXPORT_DECOY,
+  decoyTrailingComment,
+  MINIFIED_VENDOR_UMD,
+  MINIFIED_VENDOR_ESM,
   goodFont,
   evilFont,
   validSfnt,
@@ -61,11 +72,28 @@ test("rotated variant payload → confirmed strip finding", async () => {
   assert.equal(finding.contentConfirmed, true);
 });
 
-test("generic obfuscation → manual-review only, suspicious (not infected)", async () => {
+test("unknown obfuscated payload after the export → confirmed strip, infected", async () => {
+  // BEHAVIOUR CHANGE, deliberate. This fixture matches no signature and no seed,
+  // and the old detector could only ever flag it for manual review — which is
+  // precisely why a rotated payload survived a cleanup run. Position plus
+  // capability now confirm it on its own merits.
   const repo = await makeRepo({ "src/App.js": infectedConfig(GENERIC_PAYLOAD) });
   const f = await scanRepo(repo);
-  const finding = byId(f, "js.payload.heuristic");
-  assert.ok(finding, "expected heuristic finding");
+  const finding = byId(f, "js.payload.injected");
+  assert.ok(finding, "expected a structurally confirmed finding");
+  assert.equal(finding.action, "strip-js-payload");
+  assert.equal(finding.contentConfirmed, true);
+  assert.equal(f.severity, "infected");
+  assert.ok(finding.edit.offset > 0, "annotation offset points at the payload");
+});
+
+test("a single weak signal after the export → review only, suspicious", async () => {
+  // The review tier that GENERIC_PAYLOAD used to cover: reported, never cut,
+  // and not enough to mark a repo infected.
+  const repo = await makeRepo({ "postcss.config.mjs": LOW_SIGNAL_TAIL });
+  const f = await scanRepo(repo);
+  const finding = byId(f, "js.payload.suspect-tail");
+  assert.ok(finding, "expected a suspect-tail finding");
   assert.equal(finding.action, "manual-review");
   assert.equal(finding.contentConfirmed, false);
   assert.equal(f.severity, "suspicious");
@@ -226,4 +254,104 @@ test("co-presence raises severity but does not mark infected without payload", a
   assert.equal(f.coPresenceAmplified, true);
   assert.equal(f.hasContentConfirmed, false);
   assert.equal(f.severity, "suspicious");
+});
+
+// ─── structural detection (signature-independent) ───────────────────────────────
+
+test("rotated payload in a nested monorepo path is detected", async () => {
+  // The exact regression: a real infection at packages/ui/postcss.config.mjs was
+  // reported clean because the payload carried no known signature. Traversal was
+  // never the problem, so this asserts detection at depth, not reachability.
+  const repo = await makeRepo({
+    "packages/ui/postcss.config.mjs": infectedDotNotation(),
+    "apps/web/next.config.mjs": LEGIT_CONFIG,
+  });
+  const f = await scanRepo(repo);
+  assert.equal(f.severity, "infected");
+
+  const finding = byId(f, "js.payload.injected");
+  assert.ok(finding, "expected a structurally confirmed finding");
+  assert.equal(finding.file, "packages/ui/postcss.config.mjs");
+  assert.equal(finding.action, "strip-js-payload");
+  assert.equal(finding.contentConfirmed, true);
+  assert.ok(finding.edit.offset > 0, "offset points at the payload, not the shim");
+  assert.equal(finding.edit.ranges.filter((r) => r.role === "shim").length, 2);
+  assert.equal(finding.edit.ranges.filter((r) => r.role === "payload").length, 1);
+  assert.equal(f.findings.filter((x) => x.category === "js").length, 1, "one js finding per file");
+});
+
+test("the finding names the evidence that confirmed it", async () => {
+  // An automatic edit has to be auditable: the report must say WHY, not just that
+  // some variant matched.
+  const repo = await makeRepo({ "postcss.config.mjs": infectedDotNotation() });
+  const f = await scanRepo(repo);
+  const finding = byId(f, "js.payload.injected");
+  assert.match(finding.description, /capability \d+/, "carries the score");
+  assert.match(finding.description, /subprocess|HTTP|global/i, "names at least one behaviour");
+  assert.ok(finding.evidence.capability >= 5, "evidence is machine-readable too");
+});
+
+test("the payload is detected with no signature, no seed and no eval", async () => {
+  assert.ok(!DOT_NOTATION_PAYLOAD.includes("eval("), "fixture must not use eval");
+  const repo = await makeRepo({ "tailwind.config.js": infectedDotNotation() });
+  const f = await scanRepo(repo);
+  assert.equal(f.severity, "infected");
+});
+
+test("a trailing comment claiming to be an export cannot hide a payload", async () => {
+  const repo = await makeRepo({
+    "postcss.config.mjs": decoyTrailingComment(DOT_NOTATION_PAYLOAD),
+  });
+  const f = await scanRepo(repo);
+  assert.equal(f.severity, "infected", "a comment is not a statement");
+});
+
+// ─── the false-positive guards ──────────────────────────────────────────────────
+
+test("clean and idiomatic files produce no js findings", async () => {
+  const repo = await makeRepo({
+    "postcss.config.mjs": LEGIT_CONFIG,
+    "next.config.mjs": LEGIT_SHIM_CONFIG,
+    "babel.config.js": HARMLESS_TAIL,
+    "eslint.config.mjs": COMMENTED_EXPORT_DECOY,
+    "vendor/umd.js": MINIFIED_VENDOR_UMD,
+    "vendor/esm.js": MINIFIED_VENDOR_ESM,
+  });
+  const f = await scanRepo(repo);
+  assert.deepEqual(
+    f.findings.filter((x) => x.category === "js"),
+    [],
+    "none of these may be flagged",
+  );
+  assert.equal(f.severity, "clean");
+});
+
+test("a legitimate main-guard after the export is never auto-stripped", async () => {
+  const repo = await makeRepo({ "postcss.config.mjs": MAIN_GUARD_TAIL });
+  const f = await scanRepo(repo);
+  const js = f.findings.filter((x) => x.category === "js");
+  for (const finding of js) {
+    assert.equal(finding.action, "manual-review", "must never be an automatic edit");
+    assert.equal(finding.contentConfirmed, false);
+  }
+  assert.notEqual(f.severity, "infected");
+});
+
+test("an orphan shim is suspicious and auto-fixable, not infected", async () => {
+  const repo = await makeRepo({ "postcss.config.mjs": ORPHAN_SHIM_CONFIG });
+  const f = await scanRepo(repo);
+  const finding = byId(f, "js.shim.orphan");
+  assert.ok(finding, "expected an orphan-shim finding");
+  assert.equal(finding.autoFix, true);
+  assert.equal(finding.contentConfirmed, false);
+  assert.equal(f.severity, "suspicious");
+  assert.equal(f.hasAutoFixable, true);
+});
+
+test("a JSX file is reported but never marked for automatic removal", async () => {
+  const repo = await makeRepo({ "src/Widget.jsx": infectedDotNotation() });
+  const f = await scanRepo(repo);
+  for (const finding of f.findings.filter((x) => x.category === "js")) {
+    assert.equal(finding.action, "manual-review", "JSX is never safe to cut automatically");
+  }
 });

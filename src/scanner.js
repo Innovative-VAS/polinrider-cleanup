@@ -15,7 +15,9 @@
  * @property {string} file                 repo-relative path
  * @property {'high'|'low'} confidence
  * @property {'strip-js-payload'|'edit-vscode'|'delete-font'|'remove-font-set'|'remove-dir'|'remove-artifact'|'fix-gitignore'|'manual-review'} action
- * @property {boolean} contentConfirmed    true only when a known signature matched
+ * @property {boolean} contentConfirmed    true when the payload is positively identified
+ * @property {boolean} [autoFix]           safely removable without implying infection
+ * @property {Object} [evidence]           {capability, distinct, form} scores
  * @property {string} description
  * @property {Object} [edit]               action parameters for the remediator
  *
@@ -23,6 +25,7 @@
  * @property {string} repoDir
  * @property {'clean'|'suspicious'|'infected'} severity
  * @property {boolean} hasContentConfirmed
+ * @property {boolean} hasAutoFixable      something is removable (may not be "infected")
  * @property {boolean} coPresenceAmplified
  * @property {Finding[]} findings
  * @property {string[]} manualReview
@@ -36,6 +39,7 @@ import { parseJsonc, getMember } from "./jsonc.js";
 import { collectByExtension } from "./walk.js";
 import { looksSuspicious, collectFontReferences, isReferenced } from "./fonts.js";
 import { buildExcluder } from "./exclude.js";
+import { assessJsText } from "./capability.js";
 
 /**
  * Scan a single repository directory.
@@ -64,6 +68,14 @@ export async function scanRepo(repoDir, opts = {}) {
     sig.FONT_DIRS.some((d) => existsSync(path.join(repoDir, d)));
 
   const hasContentConfirmed = findings.some((f) => f.contentConfirmed);
+  // Some findings are safely removable without being grounds to call a repo
+  // infected — an orphaned injector shim left behind by an earlier partial
+  // cleanup, for instance. Severity stays driven by contentConfirmed, but the
+  // remediation gate needs to know these exist.
+  const hasAutoFixable = findings.some(
+    (f) => (f.contentConfirmed || f.autoFix) && f.action !== "manual-review",
+  );
+
   let severity = "clean";
   if (hasContentConfirmed) severity = "infected";
   else if (findings.length > 0 || coPresenceAmplified) severity = "suspicious";
@@ -72,22 +84,40 @@ export async function scanRepo(repoDir, opts = {}) {
     .filter((f) => f.action === "manual-review")
     .map((f) => `${f.file}: ${f.description}`);
 
-  return { repoDir, severity, hasContentConfirmed, coPresenceAmplified, findings, manualReview };
+  return {
+    repoDir,
+    severity,
+    hasContentConfirmed,
+    hasAutoFixable,
+    coPresenceAmplified,
+    findings,
+    manualReview,
+  };
 }
 
-// ─── JS payload (appended obfuscated blob) ──────────────────────────────────────
+// ─── JS payload (obfuscated code outside the legitimate module) ────────────────
 
-/** Find the byte offset where the appended payload begins, or -1. */
-export function locatePayloadOffset(text, variant) {
-  let lastExport = -1;
-  const re = new RegExp(sig.EXPORT_MARKER_RE.source, "g");
-  let m;
-  while ((m = re.exec(text))) lastExport = m.index;
-  const from = lastExport >= 0 ? lastExport : 0;
-  const tailMatch = new RegExp(variant.startRe.source).exec(text.slice(from));
-  if (tailMatch) return from + tailMatch.index;
-  const anyMatch = new RegExp(variant.startRe.source).exec(text);
-  return anyMatch ? anyMatch.index : -1;
+/**
+ * The offset an annotation or SARIF region should point at: the start of the
+ * payload proper, not of a prepended shim. A shim range starts at 0, which
+ * would fail the `offset > 0` gate in the reporters and collapse the
+ * annotation to line 1.
+ */
+function reportOffset(ranges) {
+  const payload = ranges.find((r) => r.role === "payload");
+  return (payload ?? ranges[0])?.start ?? -1;
+}
+
+function editFor(file, assessment) {
+  const { ranges, verdict } = assessment;
+  return {
+    absPath: file,
+    offset: reportOffset(ranges),
+    ranges: ranges.map(({ start, end, role }) => ({ start, end, role })),
+    variantId: assessment.knownVariant?.id,
+    scores: verdict.score,
+    blockers: verdict.blockers,
+  };
 }
 
 async function detectJsPayloads(repoDir, findings, rel, isExcluded) {
@@ -101,50 +131,65 @@ async function detectJsPayloads(repoDir, findings, rel, isExcluded) {
       continue;
     }
 
-    // 1. Known variants — content-confirmed via signature + a numeric seed.
-    let matchedKnown = false;
-    for (const variant of sig.JS_VARIANTS) {
-      const confirmed =
-        text.includes(variant.signature) && variant.seeds.some((s) => text.includes(s));
-      if (!confirmed) continue;
-      matchedKnown = true;
-      const offset = locatePayloadOffset(text, variant);
-      const canStrip = offset > 0;
-      findings.push({
-        id: `js.payload.${variant.id}`,
-        category: "js",
-        file: rel(file),
-        confidence: "high",
-        action: canStrip ? "strip-js-payload" : "manual-review",
-        contentConfirmed: true,
-        description: canStrip
-          ? `${variant.label} appended at offset ${offset} — will strip from there to EOF`
-          : `${variant.label} detected but its start offset could not be located safely — strip manually`,
-        edit: canStrip ? { absPath: file, offset, variantId: variant.id } : undefined,
-      });
-      break; // one variant finding per file is enough
-    }
-    if (matchedKnown) continue;
+    const relPath = rel(file);
+    const assessment = assessJsText(text, relPath);
+    const v = assessment.verdict;
+    if (v.verdict === "none") continue;
 
-    // 2. Generic heuristic for UNKNOWN variants → manual review only, never auto-strip.
-    let lastExport = -1;
-    const re = new RegExp(sig.EXPORT_MARKER_RE.source, "g");
-    let m;
-    while ((m = re.exec(text))) lastExport = m.index;
-    const tail = lastExport >= 0 ? text.slice(lastExport) : text;
-    const h = sig.GENERIC_HEURISTIC;
-    if (h.globalAssignRe.test(tail) && h.obfArrayRe.test(tail) && h.evalRe.test(tail)) {
+    const variant = assessment.knownVariant;
+    // A known signature only LABELS the finding; the structural assessment above
+    // is what decided one exists. That inversion is why a rotated payload is
+    // caught at all.
+    const prefix = variant ? `${variant.label} — ` : "";
+
+    // Exactly one js finding per file, whatever the tier.
+    if (v.verdict === "confirmed") {
       findings.push({
-        id: "js.payload.heuristic",
+        id: variant ? `js.payload.${variant.id}` : "js.payload.injected",
         category: "js",
-        file: rel(file),
-        confidence: "low",
-        action: "manual-review",
-        contentConfirmed: false,
-        description:
-          "Obfuscated code appended after the last export (global[...] assignment + obfuscated array + eval). Possible unknown PolinRider variant — review manually.",
+        file: relPath,
+        confidence: "high",
+        action: "strip-js-payload",
+        contentConfirmed: true,
+        description: `${prefix}${v.reason}`,
+        evidence: v.score,
+        edit: editFor(file, assessment),
       });
+      continue;
     }
+
+    if (v.verdict === "shim-only") {
+      findings.push({
+        id: "js.shim.orphan",
+        category: "js",
+        file: relPath,
+        confidence: "low",
+        action: "strip-js-payload",
+        contentConfirmed: false,
+        // Residue from an earlier partial cleanup: removable, but not on its own
+        // grounds for calling a repo infected.
+        autoFix: true,
+        description: v.reason,
+        evidence: v.score,
+        edit: editFor(file, assessment),
+      });
+      continue;
+    }
+
+    findings.push({
+      id: variant
+        ? `js.payload.${variant.id}`
+        : assessment.capability.degraded
+          ? "js.payload.unlexable"
+          : "js.payload.suspect-tail",
+      category: "js",
+      file: relPath,
+      confidence: v.confidence,
+      action: "manual-review",
+      contentConfirmed: v.contentConfirmed,
+      description: `${prefix}${v.reason}`,
+      evidence: v.score,
+    });
   }
 }
 

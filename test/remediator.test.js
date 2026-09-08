@@ -13,6 +13,10 @@ import {
   ORIGINAL_PAYLOAD,
   ROTATED_PAYLOAD,
   infectedConfig,
+  infectedDotNotation,
+  LEGIT_SHIM_CONFIG,
+  ORPHAN_SHIM_CONFIG,
+  HANDWRITTEN_DEV_TAIL,
   goodFont,
   evilFont,
 } from "./helpers.js";
@@ -133,4 +137,96 @@ test("manual-review-only infection makes no automated file changes", async () =>
   const result = await remediate(repo, findings, { git: noGit });
   assert.equal(result.changed, false, "no auto-fixable changes for an impostor dep");
   assert.equal(result.skipped.length >= 1, true);
+});
+
+// ─── structural payload removal ─────────────────────────────────────────────────
+
+test("strips a rotated payload AND its prepended shim, byte-exact", async () => {
+  // The full real-world shape: injected createRequire prologue, the real config,
+  // ~40 lines of blank padding, then a minified payload carrying no known
+  // signature. The file must come back exactly as it was before infection.
+  const repo = await makeRepo({ "packages/ui/postcss.config.mjs": infectedDotNotation() });
+  const findings = await scanRepo(repo);
+  assert.equal(findings.severity, "infected", "a nested monorepo path must still be found");
+
+  const result = await remediate(repo, findings, { git: noGit });
+  assert.equal(result.changed, true);
+
+  const out = await fs.readFile(path.join(repo, "packages/ui/postcss.config.mjs"), "utf8");
+  assert.equal(out, LEGIT_CONFIG.replace(/\s+$/, "") + "\n", "restored byte-for-byte");
+  assert.ok(!out.includes("createRequire"), "the injected shim is gone");
+  assert.ok(!out.includes("example.invalid"), "the payload is gone");
+  assert.ok(!/\n\n\n/.test(out), "the padding left with the payload");
+});
+
+test("removing the payload leaves the repo clean on a re-scan", async () => {
+  const repo = await makeRepo({ "postcss.config.mjs": infectedDotNotation() });
+  await remediate(repo, await scanRepo(repo), { git: noGit });
+  const again = await scanRepo(repo);
+  assert.equal(again.severity, "clean", "remediation must be idempotent");
+
+  // And a second remediation changes nothing further.
+  const second = await remediate(repo, again, { git: noGit });
+  assert.equal(second.filesModified.length, 0);
+});
+
+test("an orphan shim is removed without marking the repo infected", async () => {
+  const repo = await makeRepo({ "postcss.config.mjs": ORPHAN_SHIM_CONFIG });
+  const findings = await scanRepo(repo);
+  assert.equal(findings.severity, "suspicious", "residue alone is not an infection");
+  assert.equal(findings.hasAutoFixable, true, "but it is still removable");
+
+  const result = await remediate(repo, findings, { git: noGit });
+  const out = await fs.readFile(path.join(repo, "postcss.config.mjs"), "utf8");
+  assert.equal(out, LEGIT_CONFIG.replace(/\s+$/, "") + "\n");
+  assert.ok(result.applied.some((f) => f.id === "js.shim.orphan"));
+});
+
+test("a config that genuinely uses createRequire is left untouched", async () => {
+  const repo = await makeRepo({ "postcss.config.mjs": LEGIT_SHIM_CONFIG });
+  const findings = await scanRepo(repo);
+  assert.equal(findings.severity, "clean");
+  await remediate(repo, findings, { git: noGit });
+  const out = await fs.readFile(path.join(repo, "postcss.config.mjs"), "utf8");
+  assert.equal(out, LEGIT_SHIM_CONFIG, "a load-bearing shim must survive verbatim");
+});
+
+test("a hand-written post-export dev block is reported but never edited", async () => {
+  const repo = await makeRepo({ "vite.config.js": HANDWRITTEN_DEV_TAIL });
+  const findings = await scanRepo(repo);
+  const result = await remediate(repo, findings, { git: noGit });
+  const out = await fs.readFile(path.join(repo, "vite.config.js"), "utf8");
+  assert.equal(out, HANDWRITTEN_DEV_TAIL, "legitimate code must not be touched");
+  // .gitignore hygiene always runs, so assert on the target file specifically.
+  assert.ok(!result.filesModified.includes("vite.config.js"));
+});
+
+test("re-verification refuses to strip when the file changed after the scan", async () => {
+  const repo = await makeRepo({ "postcss.config.mjs": infectedDotNotation() });
+  const findings = await scanRepo(repo);
+
+  // Someone cleans the file by hand between the scan and the fix.
+  const target = path.join(repo, "postcss.config.mjs");
+  await fs.writeFile(target, LEGIT_CONFIG, "utf8");
+
+  const result = await remediate(repo, findings, { git: noGit });
+  assert.ok(!result.filesModified.includes("postcss.config.mjs"), "the config may not be rewritten");
+  assert.equal(await fs.readFile(target, "utf8"), LEGIT_CONFIG, "the file is left alone");
+  assert.ok(
+    result.skipped.some((s) => /re-verification|moved|nothing to strip/.test(s.reason)),
+    `expected a re-verification skip, got ${JSON.stringify(result.skipped.map((s) => s.reason))}`,
+  );
+});
+
+test("a file that no longer tokenizes is never stripped", async () => {
+  const repo = await makeRepo({ "postcss.config.mjs": infectedDotNotation() });
+  const findings = await scanRepo(repo);
+
+  const target = path.join(repo, "postcss.config.mjs");
+  const broken = infectedDotNotation() + '\nconst oops = "unterminated\n';
+  await fs.writeFile(target, broken, "utf8");
+
+  const result = await remediate(repo, findings, { git: noGit });
+  assert.ok(!result.filesModified.includes("postcss.config.mjs"));
+  assert.equal(await fs.readFile(target, "utf8"), broken, "left exactly as found");
 });
