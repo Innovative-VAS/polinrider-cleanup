@@ -7,24 +7,11 @@
  * char offset into a 1-based line. Every other finding is file-level (startLine 1).
  */
 
-import fs from "node:fs";
 import path from "node:path";
+import { findingStartLine as lineFor } from "./lines.js";
 
 const PROJECT_URL = "https://github.com/Innovative-VAS/polinrider-cleanup";
 const levelOf = (f) => (f.contentConfirmed ? "error" : "warning");
-
-/** 1-based start line for findings that carry a char offset, else 1. */
-function lineFor(repoDir, f) {
-  const offset = f.edit?.offset;
-  if (!(offset > 0) || !repoDir) return 1;
-  try {
-    const text = fs.readFileSync(path.join(repoDir, f.file), "utf8");
-    if (offset > text.length) return 1;
-    return text.slice(0, offset).split("\n").length;
-  } catch {
-    return 1;
-  }
-}
 
 /** Repo-root-relative, forward-slashed URI (SARIF artifactLocation). */
 function uriFor(repoRoot, repoDir, relFile) {
