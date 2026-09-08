@@ -1,6 +1,6 @@
 {
   "name": "polinrider-remover",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "Hardened CLI that scans a GitHub org for PolinRider malware and opens surgical cleanup PRs. Reads target files as inert text only — never executes them.",
   "type": "module",
   "bin": {

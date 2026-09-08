@@ -22,6 +22,7 @@ and opens a PR per infected repo — all inside an isolated Docker container.
 - [Prerequisites](#prerequisites)
 - [Setup](#setup)
 - [Running](#running)
+- [How JS payload detection works](#how-js-payload-detection-works)
 - [Security design](#security-design)
 - [Runtime hardening](#runtime-hardening)
 - [Options](#options)
@@ -34,14 +35,14 @@ and opens a PR per infected repo — all inside an isolated Docker container.
 For each repo in your org:
 
 1. **Clones** the default branch (shallow, `--depth=1`, git hooks disabled)
-2. **Scans in-process** — reads files as inert text/bytes and pattern-matches known PolinRider signatures. It **never executes** the files it scans (see [Runtime hardening](#runtime-hardening)). Detection is *content-confirmed*: a repo is marked infected only when a real signature matches.
+2. **Scans in-process** — reads files as inert text/bytes and pattern-matches. It **never executes** the files it scans (see [Runtime hardening](#runtime-hardening)). JS payloads are found **structurally**, not by signature (see [How JS payload detection works](#how-js-payload-detection-works)), so a payload that rotates its signature is still caught. Detection stays *content-confirmed*: a repo is marked infected only when real evidence matches, never on suspicion alone.
 3. **Surgically remediates** infected repos — removing only what is confirmed malicious and preserving legitimate code, tasks, fonts, and configs:
-   - **Strips** the appended obfuscated payload (original + rotated variants) from any `.js/.ts/.mjs` file (config files, `App.js`, `vite.config.js`, …), keeping everything before the payload byte-for-byte
+   - **Strips** obfuscated code that sits outside a file's legitimate module — an appended payload, and the `createRequire` prologue the injector prepends to reach `require()` from ESM — from any `.js/.ts/.mjs` file at any depth (`packages/ui/postcss.config.mjs`, `App.js`, `vite.config.js`, …). Known and unknown variants alike; every other byte, including formatting, is preserved exactly.
    - **Removes the entire `.vscode` directory** when any task/launch entry is malicious — `curl … | bash`, `runOn: folderOpen` auto-runs, C2 hosts, or running an interpreter against a font/asset (e.g. `node ./public/fonts/x.woff2`)
    - **Removes font carriers strategically.** A font is a *confirmed carrier* only when it is unreferenced, fails structural font validation (no valid magic / table directory — real fonts, including commercial `.otf` files with embedded license URLs and binary blobs, are trusted), *and* contains an appended code payload. When a carrier is found, the scanner removes the carrier plus the whole Font-Awesome-named disguise set (`fa-brands/solid/regular-…`) and its `README.md`, while **preserving clean, non-`fa-` fonts in the same directory** (only the leaf `fonts/` dir is removed if nothing clean remains). `fa-`-named fonts with **no** payload are flagged `suspicious` for manual review — never auto-removed.
    - **Deletes** `temp_auto_push.bat`, `temp_interactive_push.bat`, `config.bat`, `branch_structure.json`
    - **Fixes** `.gitignore` (removes all injected lines — `config.bat`, `temp_*.bat`, `branch_structure.json` — re-adds `.env*` patterns) and untracks committed `.env` files
-   - **Flags for manual review** (never auto-edits): impostor npm dependencies, fetch-and-exec lifecycle scripts, and unknown-but-obfuscated appended code
+   - **Flags for manual review** (never auto-edits): impostor npm dependencies, fetch-and-exec lifecycle scripts, and any payload the detector is confident about but cannot cut safely — a `.jsx`/`.tsx` file, a file it cannot tokenize, or code with no export boundary to anchor the cut
 4. **Opens a PR** on a new branch with a precise summary of every change — your branch protection rules apply, nothing merges automatically
 
 ---
@@ -178,6 +179,13 @@ catalog, payload fixtures, and built bundle (`src/signatures.js`, `test/**`,
 so an actual infection here would fail the build. Keep the exclude list as tight
 as possible; anything excluded is a blind spot.
 
+That list stays short because the **position gate**, not an allowlist, is what
+keeps the scanner's own privileged code from flagging itself — `safe-exec.js`
+spawns processes and `ci.js` has a post-export main-guard, and neither is
+excluded. `test/selfscan.test.js` runs the scanner over this repo on every
+`npm test` and fails if that ever stops being true, so a rule broadened too far
+is caught locally rather than in production.
+
 ### Inputs
 
 | Input | Default | Description |
@@ -296,6 +304,74 @@ docker compose run --rm polinrider-cleanup
 ```
 
 The tool will print a summary at the end listing every PR URL opened.
+
+---
+
+## How JS payload detection works
+
+The malware rotates its payload. A detector keyed on *how the payload is
+written* stops working the moment the attacker changes how it is written — which
+is exactly what happened: a sample using `global.i =` instead of `global['!']=`,
+with no string-array obfuscator and no `eval`, matched nothing and a genuinely
+infected repo was reported clean.
+
+So detection rests on three things the attacker cannot drop without breaking
+their own malware:
+
+| Invariant | Why it cannot be dropped |
+|---|---|
+| **Position** | the payload must run on module load without disturbing the real export, so it lands outside the file's legitimate module |
+| **Capability** | it must reach the network and spawn processes, or it earns nothing |
+| **Form** | it is machine-generated, not hand-written |
+
+**Position is a necessary gate; capability is the confirming gate.** Capability
+evidence inside a file's normal body is never a finding — plenty of legitimate
+configs shell out to `git` inside their export. Only code sitting where
+legitimate code does not sit is considered at all, and only then does what it
+does decide the verdict.
+
+The file is read with a small hand-written tokenizer (no dependencies, tolerates
+TypeScript) that produces three co-indexed views: **code**, **string/template
+contents**, and **comment contents**. This separation is load-bearing in both
+directions — `require("node:http")` is found even though the specifier lives
+inside a string, while a doc comment that merely quotes `eval(...)` scores
+nothing. Module specifiers are matched by exact equality against the token
+stream, so a URL containing `http` is not mistaken for the `http` module.
+The export boundary is located on the code view, so `export default` written
+inside a comment or a string can no longer move it.
+
+A match on a known signature no longer decides anything. It only **labels** the
+finding, and exempts it from the certainty floors below — a signature match is
+positive identification rather than an inference. Adding a new variant to the
+catalog is optional.
+
+### What is never removed automatically
+
+Findings are reported either way; these blockers only withhold the **edit**, and
+each one is named in the report:
+
+- code with **no export boundary** to anchor the cut
+- a file the tokenizer **cannot read**, or one containing **JSX**
+- a payload whose evidence comes from a **single capability group**, or that
+  shows **no sign of being machine-generated** — these two floors are what stop
+  a legitimate post-export main-guard or a hand-written dev block from being
+  edited
+- any splice that does not survive **re-tokenization** afterwards
+
+Every removal is re-derived from the file's current bytes at apply time, so a
+stale finding cannot truncate the wrong thing, and the result must re-parse with
+its export intact before anything is written.
+
+Because an automatic edit has to be auditable, findings name their evidence
+rather than a variant id:
+
+```
+[confirmed] js.payload.injected  packages/ui/postcss.config.mjs
+  obfuscated code appended after the last export: spawns OS subprocesses,
+  raw HTTP client, decompresses embedded blobs, stashes require/module on the
+  global object, embeds a 20-byte hex address (wallet), spoofs a browser
+  User-Agent, a single line over 400 characters (capability 15, 5 distinct, form 2)
+```
 
 ---
 
@@ -421,6 +497,9 @@ polinrider-remover/
 │   ├── safety.js         # runtime guards (eval/Function/vm/process.binding) — imported first
 │   ├── safe-exec.js      # subprocess allowlist (git/gh only, hooks disabled)
 │   ├── signatures.js     # IOC catalog (payload variants, C2 hosts, font magic, impostor deps)
+│   ├── jslex.js          # hand-written JS/TS tokenizer: statements + code/literal/comment views
+│   ├── capability.js     # position gate + capability/form scoring (no literal IOC tokens)
+│   ├── lines.js          # shared char-offset → line number (ci.js + sarif.js)
 │   ├── scanner.js        # content-confirmed detection → Findings report
 │   ├── exclude.js        # glob matcher for the scan `exclude` option
 │   ├── remediator.js     # surgical removal driven by Findings
