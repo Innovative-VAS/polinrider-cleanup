@@ -19,6 +19,7 @@ import {
   INFECTED_TASKS,
   ORIGINAL_PAYLOAD,
   GENERIC_PAYLOAD,
+  LOW_SIGNAL_TAIL,
   infectedConfig,
 } from "./helpers.js";
 
@@ -170,7 +171,9 @@ test("check: exclude skips flagged files", async () => {
 });
 
 test("check: suspicious repo fails only at fail-on=suspicious", async () => {
-  const repo = await makeRepo({ "weird.js": `export const x = 1;\n${GENERIC_PAYLOAD}` });
+  // GENERIC_PAYLOAD now confirms as infected, so the suspicious tier needs a
+  // fixture that really is only suspicious: one weak capability signal.
+  const repo = await makeRepo({ "weird.js": LOW_SIGNAL_TAIL });
   const def = await runAction(repo, { mode: "check" }); // fail-on=infected
   assert.equal(def.outputs.severity, "suspicious");
   assert.equal(def.code, 0);

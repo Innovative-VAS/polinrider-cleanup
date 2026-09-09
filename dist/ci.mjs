@@ -42,7 +42,7 @@ var require_windows = __commonJS({
     module.exports = isexe;
     isexe.sync = sync;
     var fs7 = __require("fs");
-    function checkPathExt(path12, options) {
+    function checkPathExt(path13, options) {
       var pathext = options.pathExt !== void 0 ? options.pathExt : process.env.PATHEXT;
       if (!pathext) {
         return true;
@@ -53,25 +53,25 @@ var require_windows = __commonJS({
       }
       for (var i2 = 0; i2 < pathext.length; i2++) {
         var p = pathext[i2].toLowerCase();
-        if (p && path12.substr(-p.length).toLowerCase() === p) {
+        if (p && path13.substr(-p.length).toLowerCase() === p) {
           return true;
         }
       }
       return false;
     }
-    function checkStat(stat, path12, options) {
+    function checkStat(stat, path13, options) {
       if (!stat.isSymbolicLink() && !stat.isFile()) {
         return false;
       }
-      return checkPathExt(path12, options);
+      return checkPathExt(path13, options);
     }
-    function isexe(path12, options, cb) {
-      fs7.stat(path12, function(er, stat) {
-        cb(er, er ? false : checkStat(stat, path12, options));
+    function isexe(path13, options, cb) {
+      fs7.stat(path13, function(er, stat) {
+        cb(er, er ? false : checkStat(stat, path13, options));
       });
     }
-    function sync(path12, options) {
-      return checkStat(fs7.statSync(path12), path12, options);
+    function sync(path13, options) {
+      return checkStat(fs7.statSync(path13), path13, options);
     }
   }
 });
@@ -82,13 +82,13 @@ var require_mode = __commonJS({
     module.exports = isexe;
     isexe.sync = sync;
     var fs7 = __require("fs");
-    function isexe(path12, options, cb) {
-      fs7.stat(path12, function(er, stat) {
+    function isexe(path13, options, cb) {
+      fs7.stat(path13, function(er, stat) {
         cb(er, er ? false : checkStat(stat, options));
       });
     }
-    function sync(path12, options) {
-      return checkStat(fs7.statSync(path12), options);
+    function sync(path13, options) {
+      return checkStat(fs7.statSync(path13), options);
     }
     function checkStat(stat, options) {
       return stat.isFile() && checkMode(stat, options);
@@ -121,7 +121,7 @@ var require_isexe = __commonJS({
     }
     module.exports = isexe;
     isexe.sync = sync;
-    function isexe(path12, options, cb) {
+    function isexe(path13, options, cb) {
       if (typeof options === "function") {
         cb = options;
         options = {};
@@ -131,7 +131,7 @@ var require_isexe = __commonJS({
           throw new TypeError("callback not provided");
         }
         return new Promise(function(resolve, reject) {
-          isexe(path12, options || {}, function(er, is) {
+          isexe(path13, options || {}, function(er, is) {
             if (er) {
               reject(er);
             } else {
@@ -140,7 +140,7 @@ var require_isexe = __commonJS({
           });
         });
       }
-      core(path12, options || {}, function(er, is) {
+      core(path13, options || {}, function(er, is) {
         if (er) {
           if (er.code === "EACCES" || options && options.ignoreErrors) {
             er = null;
@@ -150,9 +150,9 @@ var require_isexe = __commonJS({
         cb(er, is);
       });
     }
-    function sync(path12, options) {
+    function sync(path13, options) {
       try {
-        return core.sync(path12, options || {});
+        return core.sync(path13, options || {});
       } catch (er) {
         if (options && options.ignoreErrors || er.code === "EACCES") {
           return false;
@@ -168,7 +168,7 @@ var require_isexe = __commonJS({
 var require_which = __commonJS({
   "node_modules/which/which.js"(exports, module) {
     var isWindows = process.platform === "win32" || process.env.OSTYPE === "cygwin" || process.env.OSTYPE === "msys";
-    var path12 = __require("path");
+    var path13 = __require("path");
     var COLON = isWindows ? ";" : ":";
     var isexe = require_isexe();
     var getNotFoundError = (cmd) => Object.assign(new Error(`not found: ${cmd}`), { code: "ENOENT" });
@@ -206,7 +206,7 @@ var require_which = __commonJS({
           return opt.all && found.length ? resolve(found) : reject(getNotFoundError(cmd));
         const ppRaw = pathEnv[i2];
         const pathPart = /^".*"$/.test(ppRaw) ? ppRaw.slice(1, -1) : ppRaw;
-        const pCmd = path12.join(pathPart, cmd);
+        const pCmd = path13.join(pathPart, cmd);
         const p = !pathPart && /^\.[\\\/]/.test(cmd) ? cmd.slice(0, 2) + pCmd : pCmd;
         resolve(subStep(p, i2, 0));
       });
@@ -233,7 +233,7 @@ var require_which = __commonJS({
       for (let i2 = 0; i2 < pathEnv.length; i2++) {
         const ppRaw = pathEnv[i2];
         const pathPart = /^".*"$/.test(ppRaw) ? ppRaw.slice(1, -1) : ppRaw;
-        const pCmd = path12.join(pathPart, cmd);
+        const pCmd = path13.join(pathPart, cmd);
         const p = !pathPart && /^\.[\\\/]/.test(cmd) ? cmd.slice(0, 2) + pCmd : pCmd;
         for (let j = 0; j < pathExt.length; j++) {
           const cur = p + pathExt[j];
@@ -281,7 +281,7 @@ var require_path_key = __commonJS({
 var require_resolveCommand = __commonJS({
   "node_modules/cross-spawn/lib/util/resolveCommand.js"(exports, module) {
     "use strict";
-    var path12 = __require("path");
+    var path13 = __require("path");
     var which = require_which();
     var getPathKey = require_path_key();
     function resolveCommandAttempt(parsed, withoutPathExt) {
@@ -299,7 +299,7 @@ var require_resolveCommand = __commonJS({
       try {
         resolved = which.sync(parsed.command, {
           path: env[getPathKey({ env })],
-          pathExt: withoutPathExt ? path12.delimiter : void 0
+          pathExt: withoutPathExt ? path13.delimiter : void 0
         });
       } catch (e) {
       } finally {
@@ -308,7 +308,7 @@ var require_resolveCommand = __commonJS({
         }
       }
       if (resolved) {
-        resolved = path12.resolve(hasCustomCwd ? parsed.options.cwd : "", resolved);
+        resolved = path13.resolve(hasCustomCwd ? parsed.options.cwd : "", resolved);
       }
       return resolved;
     }
@@ -362,8 +362,8 @@ var require_shebang_command = __commonJS({
       if (!match) {
         return null;
       }
-      const [path12, argument] = match[0].replace(/#! ?/, "").split(" ");
-      const binary = path12.split("/").pop();
+      const [path13, argument] = match[0].replace(/#! ?/, "").split(" ");
+      const binary = path13.split("/").pop();
       if (binary === "env") {
         return argument;
       }
@@ -398,7 +398,7 @@ var require_readShebang = __commonJS({
 var require_parse = __commonJS({
   "node_modules/cross-spawn/lib/parse.js"(exports, module) {
     "use strict";
-    var path12 = __require("path");
+    var path13 = __require("path");
     var resolveCommand = require_resolveCommand();
     var escape = require_escape();
     var readShebang = require_readShebang();
@@ -423,7 +423,7 @@ var require_parse = __commonJS({
       const needsShell = !isExecutableRegExp.test(commandFile);
       if (parsed.options.forceShell || needsShell) {
         const needsDoubleEscapeMetaChars = isCmdShimRegExp.test(commandFile);
-        parsed.command = path12.normalize(parsed.command);
+        parsed.command = path13.normalize(parsed.command);
         parsed.command = escape.command(parsed.command);
         parsed.args = parsed.args.map((arg) => escape.argument(arg, needsDoubleEscapeMetaChars));
         const shellCommand = [parsed.command].concat(parsed.args).join(" ");
@@ -608,7 +608,7 @@ for (const key of ["binding", "_linkedBinding"]) {
 // src/ci.js
 import fs6 from "node:fs";
 import fsp from "node:fs/promises";
-import path11 from "node:path";
+import path12 from "node:path";
 import { fileURLToPath as fileURLToPath3 } from "node:url";
 
 // src/scanner.js
@@ -625,8 +625,7 @@ var JS_VARIANTS = [
     signature: "rmcej%otb%",
     // appears as ("rmcej%otb%",2857687)
     decoder: "_$_1e42",
-    seeds: ["2857687", "2667686"],
-    startRe: /global\s*\[\s*(['"])!\1\s*\]\s*=/
+    seeds: ["2857687", "2667686"]
   },
   {
     id: "rotated",
@@ -634,17 +633,9 @@ var JS_VARIANTS = [
     confidence: "high",
     signature: "Cot%3t=shtP",
     decoder: "MDy",
-    seeds: ["1111436", "3896884"],
-    startRe: /global\s*\[\s*(['"])_V\1\s*\]\s*=/
+    seeds: ["1111436", "3896884"]
   }
 ];
-var EXPORT_MARKER_RE = /(?:export\s+default|module\.exports)/g;
-var GENERIC_HEURISTIC = {
-  globalAssignRe: /global\s*\[\s*(['"]).{1,12}?\1\s*\]\s*=/,
-  obfArrayRe: /\bvar\s+_\$?_?[A-Za-z0-9$_]+\s*=\s*\[/,
-  // e.g. var _$_1e42=[...]
-  evalRe: /\beval\s*\(/
-};
 var JS_EXTENSIONS = [".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs"];
 var C2_HOSTS = [
   "default-configuration.vercel.app",
@@ -770,12 +761,339 @@ function isFaFamilyName(basename) {
 function isFontDropSidecar(basename) {
   return typeof basename === "string" && FONT_DROP_SIDECARS.includes(basename.toLowerCase());
 }
+var RISKY_MODULES = /* @__PURE__ */ new Map([
+  ["child_process", { weight: 3, group: "proc", label: "spawns OS subprocesses" }],
+  ["http", { weight: 3, group: "net", label: "raw HTTP client" }],
+  ["https", { weight: 3, group: "net", label: "raw HTTPS client" }],
+  ["net", { weight: 3, group: "net", label: "raw TCP sockets" }],
+  ["tls", { weight: 3, group: "net", label: "raw TLS sockets" }],
+  ["dgram", { weight: 3, group: "net", label: "UDP sockets" }],
+  ["dns", { weight: 3, group: "net", label: "DNS resolution" }],
+  ["vm", { weight: 3, group: "dyncode", label: "runs code in a VM context" }],
+  ["worker_threads", { weight: 2, group: "proc", label: "spawns worker threads" }],
+  ["zlib", { weight: 2, group: "obf", label: "decompresses embedded blobs" }]
+]);
+var CAPABILITY_RULES = [
+  // ── weight 3: primitives ──
+  {
+    id: "proc.exec",
+    weight: 3,
+    group: "proc",
+    view: "code",
+    label: "executes a shell command",
+    re: /\b(?:execSync|execFileSync|execFile|spawnSync|spawn|fork)\s*\(/
+  },
+  {
+    id: "net.request",
+    weight: 3,
+    group: "net",
+    view: "code",
+    label: "issues a raw outbound request",
+    re: /\.\s*(?:request|createConnection)\s*\(|\bnew\s+[A-Za-z_$][\w$]*\s*\.\s*Agent\b/
+  },
+  {
+    id: "code.dynamic",
+    weight: 3,
+    group: "dyncode",
+    view: "code",
+    label: "generates code from a string",
+    re: /\beval\s*\(|\bnew\s+Function\s*\(/
+  },
+  {
+    id: "code.vm",
+    weight: 3,
+    group: "dyncode",
+    view: "code",
+    label: "compiles code via the vm module",
+    re: /\b(?:runInNewContext|runInThisContext|compileFunction)\s*\(/
+  },
+  // ── weight 3: injector markers (the highest-precision rules available) ──
+  //
+  // Legitimate code has no reason to stash require/module on the global object.
+  // Polyfills do `global.fetch = …`; they never do `global.r = require`.
+  {
+    id: "marker.global-require",
+    weight: 3,
+    group: "marker",
+    view: "code",
+    label: "stashes require/module on the global object",
+    re: /\bglobal(?:This)?\s*\.\s*[A-Za-z_$][\w$]{0,3}\s*=\s*(?:require|module)\b/
+  },
+  // ── weight 2: drainer / obfuscation specifics ──
+  {
+    id: "marker.global-beacon",
+    weight: 2,
+    group: "marker",
+    view: "code",
+    label: "assigns a short opaque id to a global",
+    // Matched on the code view, where a literal keeps its quotes but its contents
+    // are blanked to spaces — so the shape still matches without the value leaking.
+    re: /\bglobal\s*(?:\.\s*[A-Za-z_$][\w$]{0,3}|\[\s*(['"])[^'"]{1,12}\1\s*\])\s*=\s*(['"])[^'"]{1,24}\2/
+  },
+  {
+    id: "marker.campaign-id",
+    weight: 2,
+    group: "marker",
+    view: "literals",
+    wholeLiteral: true,
+    label: "campaign identifier string",
+    re: /^[A-Z]?\d{1,2}-\d{3,6}-\d{1,3}$/
+  },
+  {
+    id: "obf.string-array",
+    weight: 2,
+    group: "obf",
+    view: "code",
+    label: "string-array obfuscator table",
+    re: /\bvar\s+_\$?_?[A-Za-z0-9$]{2,}\s*=\s*\[|\b_0x[0-9a-f]{4,}\s*=\s*\[/
+  },
+  {
+    id: "obf.zlib-call",
+    weight: 2,
+    group: "obf",
+    view: "code",
+    label: "decompresses a response body",
+    re: /\bcreate(?:Gunzip|Unzip|Inflate(?:Raw)?|BrotliDecompress)\s*\(|\b(?:gunzip|inflate|brotliDecompress)(?:Sync)?\s*\(/
+  },
+  {
+    id: "chain.wallet",
+    weight: 2,
+    group: "chain",
+    view: "literals",
+    label: "embeds a 20-byte hex address (wallet)",
+    re: /(?:^|[^0-9a-fA-Fx])0x[0-9a-fA-F]{40}(?![0-9a-fA-F])/
+  },
+  {
+    id: "chain.rpc-method",
+    weight: 2,
+    group: "chain",
+    view: "literals",
+    label: "calls Ethereum JSON-RPC methods",
+    re: /\beth_[a-z][a-zA-Z]{3,}\b/
+  },
+  {
+    id: "chain.jsonrpc",
+    weight: 2,
+    group: "chain",
+    view: "literals",
+    label: "JSON-RPC envelope",
+    re: /\bjsonrpc\b/
+  },
+  {
+    // Set structurally by jslex specifier extraction, not by regex: a specifier
+    // written with \x / \u escapes or string concatenation is itself evidence.
+    id: "obf.spec-escape",
+    weight: 2,
+    group: "obf",
+    view: null,
+    label: "module specifier hidden behind escapes or concatenation"
+  },
+  // ── pair rules ──
+  {
+    id: "obf.base64-xor",
+    weight: 2,
+    group: "obf",
+    requires: ["_b64", "_xor"],
+    label: "base64-decodes then XOR-decrypts a blob"
+  },
+  { id: "_b64", weight: 0, view: "any", re: /\bbase64\b|\batob\s*\(|\bfromCharCode\s*\(/ },
+  {
+    id: "_xor",
+    weight: 0,
+    view: "code",
+    re: /\^=\s*[A-Za-z_$][\w$]*\s*(?:\.\s*charCodeAt\s*\(|\[)|\^\s*[A-Za-z_$][\w$]*\s*\.\s*charCodeAt\s*\(/
+  },
+  // ── weight 1: corroboration (weak — excluded from the `distinct` count) ──
+  //
+  // `process.env` beside a URL is everywhere in legitimate code
+  // (`const API = process.env.API_URL ?? "https://api.example.com"`), so it may
+  // add to the score but must never help satisfy the diversity floor.
+  {
+    id: "exfil.env-url",
+    weight: 1,
+    group: "exfil",
+    weak: true,
+    requires: ["_env", "_url"],
+    label: "reads env vars beside a hardcoded outbound URL"
+  },
+  { id: "_env", weight: 0, view: "code", re: /\bprocess\s*\.\s*env\b/ },
+  { id: "_url", weight: 0, view: "literals", re: /\bhttps?:\/\/[A-Za-z0-9.-]+/ },
+  {
+    id: "evade.user-agent",
+    weight: 1,
+    group: "evade",
+    weak: true,
+    view: "literals",
+    label: "spoofs a browser User-Agent",
+    re: /Mozilla\/5\.0|\bUser-Agent\b/i
+  },
+  {
+    id: "evade.race",
+    weight: 1,
+    group: "evade",
+    weak: true,
+    requires: ["_abort", "_any"],
+    label: "races several endpoints with abort"
+  },
+  { id: "_abort", weight: 0, view: "code", re: /\bAbort(?:Controller|Signal)\b/ },
+  { id: "_any", weight: 0, view: "code", re: /\bPromise\s*\.\s*any\s*\(/ }
+];
+var VARIANT_IDENT_SETS = [
+  {
+    id: "drainer-rpc",
+    label: "PolinRider payload (RPC drainer variant)",
+    weight: 5,
+    group: "variant",
+    minHits: 3,
+    view: "code",
+    idents: [
+      "BLOCK_MULTIPLE",
+      "NONCE_FANOUT",
+      "RPC_ENDPOINTS",
+      "SEARCH_FLOOR",
+      "INDEXER_URL",
+      "linkAbort",
+      "ETH_RPC_URL"
+    ]
+  }
+];
+var BENIGN_TAIL_RES = [
+  /\bimport\s*\.\s*meta\s*\.\s*(?:url|main)\b/,
+  /\brequire\s*\.\s*main\s*===\s*module\b/,
+  /\bmodule\s*===\s*require\s*\.\s*main\b/,
+  /\bimport\s*\.\s*meta\s*\.\s*hot\b|\bmodule\s*\.\s*hot\b/,
+  /\bcustomElements\s*\.\s*define\s*\(/,
+  /\bself\s*\.\s*addEventListener\s*\(/,
+  /\bprocess\s*\.\s*on\s*\(/
+];
+var PAYLOAD_SHIMS = [
+  {
+    id: "shim.createRequire-import",
+    introduces: ["createRequire"],
+    re: /^import\s?\{\s?createRequire\s?\}\s?from\s?['"](?:node:)?module['"]\s?;?$/
+  },
+  {
+    id: "shim.createRequire-const",
+    introduces: ["require"],
+    re: /^(?:const|let|var)\s\S*require\s?=\s?createRequire\s?\(\s?import\s?\.\s?meta\s?\.\s?url\s?\)\s?;?$/
+  }
+];
+var FORM_RULES = {
+  // First matching tier wins.
+  longLine: [
+    { chars: 2e3, weight: 2, label: "a single line over 2000 characters" },
+    { chars: 400, weight: 1, label: "a single line over 400 characters" }
+  ],
+  noComments: { minBytes: 800, weight: 1, label: "no comments in a large region" },
+  punctDense: { min: 0.55, weight: 1, label: "dense punctuation (minified)" },
+  // The absolute floors matter: a bare ratio would fire on any tiny file.
+  byteShare: {
+    minFileBytes: 400,
+    minRegionBytes: 500,
+    min: 0.5,
+    weight: 1,
+    label: "region is most of the file"
+  },
+  identObfuscated: {
+    minIdents: 20,
+    min: 0.5,
+    weight: 1,
+    label: "mostly single-character identifiers"
+  },
+  singleStatementBulk: {
+    minBytes: 2e3,
+    weight: 1,
+    label: "one enormous statement"
+  }
+};
+var VERDICT_THRESHOLDS = {
+  configCapability: 3,
+  anywhereCapability: 5,
+  capabilityWithForm: { capability: 3, form: 2 },
+  reviewCapability: 1,
+  reviewForm: 3,
+  minDistinct: 2,
+  minForm: 1,
+  // Files with no export boundary at all, and files jslex cannot tokenize, have
+  // no position gate — they are reportable only at a deliberately high bar, and
+  // are NEVER auto-stripped. bin/polinrider.js has no export and scores
+  // capability ~7 with form 0; the form conjunct is what keeps it clean.
+  noAnchor: { capability: 6, form: 2 },
+  unlexable: { capability: 6, form: 2 }
+};
+var CONFIG_STEMS = [
+  "postcss.config",
+  "tailwind.config",
+  "windi.config",
+  "uno.config",
+  "panda.config",
+  "next.config",
+  "nuxt.config",
+  "svelte.config",
+  "astro.config",
+  "remix.config",
+  "vite.config",
+  "vitest.config",
+  "rollup.config",
+  "webpack.config",
+  "metro.config",
+  "babel.config",
+  "jest.config",
+  "jest.setup",
+  "karma.conf",
+  "tsup.config",
+  "esbuild.config",
+  "playwright.config",
+  "cypress.config",
+  "wdio.conf",
+  "eslint.config",
+  ".eslintrc",
+  "prettier.config",
+  ".prettierrc",
+  "stylelint.config",
+  "commitlint.config",
+  "lint-staged.config",
+  "drizzle.config",
+  "knex.config",
+  "knexfile",
+  "prisma.config",
+  "gatsby-config",
+  "gatsby-node",
+  "gatsby-browser",
+  "gatsby-ssr",
+  "expo.config",
+  "app.config",
+  "capacitor.config",
+  "ecosystem.config",
+  "release.config",
+  "graphql.config",
+  "sanity.config",
+  "sanity.cli",
+  "payload.config",
+  "orval.config",
+  "knip.config",
+  "nx.config",
+  "middleware",
+  "instrumentation",
+  "sentry.client.config",
+  "sentry.server.config",
+  "sentry.edge.config"
+];
+var CONFIG_EXTS = [".js", ".cjs", ".mjs", ".jsx", ".ts", ".mts", ".cts", ".tsx"];
+var CONFIG_BASENAMES = new Set(
+  CONFIG_STEMS.flatMap((stem) => CONFIG_EXTS.map((ext) => stem + ext))
+);
+var CONFIG_BASENAME_RE = /^\.?[\w.-]*\.?(?:config|conf|rc)\.(?:[cm]?[jt]sx?)$/i;
+function isConfigBasename(p) {
+  const base = String(p || "").replace(/\\/g, "/").split("/").pop() || "";
+  return CONFIG_BASENAMES.has(base) || CONFIG_BASENAME_RE.test(base);
+}
 
 // src/jsonc.js
 function parseJsonc(text) {
   let i2 = 0;
   const n2 = text.length;
-  const fail = (msg) => {
+  const fail2 = (msg) => {
     const e = new Error(`JSONC parse error at offset ${i2}: ${msg}`);
     e.offset = i2;
     return e;
@@ -803,7 +1121,7 @@ function parseJsonc(text) {
   }
   function parseString() {
     const start = i2;
-    if (text[i2] !== '"') throw fail("expected string");
+    if (text[i2] !== '"') throw fail2("expected string");
     i2++;
     while (i2 < n2) {
       const c3 = text[i2];
@@ -822,14 +1140,14 @@ function parseJsonc(text) {
     try {
       value = JSON.parse(raw);
     } catch {
-      throw fail("invalid string literal");
+      throw fail2("invalid string literal");
     }
     return { type: "string", value, start, end: i2 };
   }
   function parseNumber2() {
     const start = i2;
     const m = /^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?/.exec(text.slice(i2));
-    if (!m) throw fail("invalid number");
+    if (!m) throw fail2("invalid number");
     i2 += m[0].length;
     return { type: "number", value: Number(m[0]), start, end: i2 };
   }
@@ -840,10 +1158,10 @@ function parseJsonc(text) {
     const value = {};
     skipWs();
     while (text[i2] !== "}") {
-      if (i2 >= n2) throw fail("unterminated object");
+      if (i2 >= n2) throw fail2("unterminated object");
       const keyNode = parseString();
       skipWs();
-      if (text[i2] !== ":") throw fail("expected ':'");
+      if (text[i2] !== ":") throw fail2("expected ':'");
       i2++;
       const valueNode = parseValue();
       members.push({ key: keyNode.value, keyNode, valueNode });
@@ -854,7 +1172,7 @@ function parseJsonc(text) {
         skipWs();
       } else break;
     }
-    if (text[i2] !== "}") throw fail("expected '}'");
+    if (text[i2] !== "}") throw fail2("expected '}'");
     i2++;
     return { type: "object", members, value, start, end: i2 };
   }
@@ -865,7 +1183,7 @@ function parseJsonc(text) {
     const value = [];
     skipWs();
     while (text[i2] !== "]") {
-      if (i2 >= n2) throw fail("unterminated array");
+      if (i2 >= n2) throw fail2("unterminated array");
       const el = parseValue();
       elements.push(el);
       value.push(el.value);
@@ -875,13 +1193,13 @@ function parseJsonc(text) {
         skipWs();
       } else break;
     }
-    if (text[i2] !== "]") throw fail("expected ']'");
+    if (text[i2] !== "]") throw fail2("expected ']'");
     i2++;
     return { type: "array", elements, value, start, end: i2 };
   }
   function parseValue() {
     skipWs();
-    if (i2 >= n2) throw fail("unexpected end of input");
+    if (i2 >= n2) throw fail2("unexpected end of input");
     const c3 = text[i2];
     if (c3 === "{") return parseObject();
     if (c3 === "[") return parseArray();
@@ -902,13 +1220,13 @@ function parseJsonc(text) {
       i2 += 4;
       return { type: "null", value: null, start: s, end: i2 };
     }
-    throw fail(`unexpected character ${JSON.stringify(c3)}`);
+    throw fail2(`unexpected character ${JSON.stringify(c3)}`);
   }
   try {
     skipWs();
     const ast = parseValue();
     skipWs();
-    if (i2 < n2) throw fail("trailing content after top-level value");
+    if (i2 < n2) throw fail2("trailing content after top-level value");
     return { ok: true, value: ast.value, ast, error: null };
   } catch (error) {
     return { ok: false, value: void 0, ast: null, error };
@@ -1071,6 +1389,1459 @@ function buildExcluder(patterns) {
   };
 }
 
+// src/jslex.js
+var LEX_LIMITS = {
+  maxBytes: 2 * 1024 * 1024,
+  maxRegexSpan: 512,
+  maxDelimiterDepth: 256,
+  maxTemplateDepth: 32,
+  maxStatements: 5e4
+};
+var AMBIENT_GLOBALS = /* @__PURE__ */ new Set([
+  ...Object.getOwnPropertyNames(globalThis),
+  "module",
+  "exports",
+  "require",
+  "__dirname",
+  "__filename",
+  "arguments",
+  "describe",
+  "it",
+  "test",
+  "expect",
+  "beforeEach",
+  "afterEach",
+  "before",
+  "after"
+]);
+var KW_EXPR_BEFORE = /* @__PURE__ */ new Set([
+  "return",
+  "typeof",
+  "instanceof",
+  "in",
+  "of",
+  "new",
+  "delete",
+  "void",
+  "throw",
+  "case",
+  "do",
+  "else",
+  "yield",
+  "await"
+]);
+var KW_CONTINUES = /* @__PURE__ */ new Set([
+  "in",
+  "instanceof",
+  "of",
+  "as",
+  "satisfies",
+  "else",
+  "catch",
+  "finally",
+  "while",
+  "extends",
+  "implements",
+  "from"
+]);
+var KW_CAN_END = /* @__PURE__ */ new Set([
+  "return",
+  "break",
+  "continue",
+  "this",
+  "true",
+  "false",
+  "null",
+  "undefined",
+  "super",
+  "debugger"
+]);
+var KW_CANNOT_END = /* @__PURE__ */ new Set([
+  "new",
+  "typeof",
+  "void",
+  "delete",
+  "await",
+  "yield",
+  "case",
+  "do",
+  "const",
+  "let",
+  "var",
+  "function",
+  "class",
+  "import",
+  "export",
+  "if",
+  "for",
+  "while",
+  "switch",
+  "try",
+  "throw",
+  "extends"
+]);
+var BLOCK_STARTERS = /* @__PURE__ */ new Set([
+  "function",
+  "async",
+  "class",
+  "abstract",
+  "if",
+  "for",
+  "while",
+  "switch",
+  "try",
+  "enum",
+  "namespace",
+  "module",
+  "declare",
+  "interface",
+  "type",
+  "{"
+]);
+var CONTINUES_AFTER_BRACE = /* @__PURE__ */ new Set([
+  "else",
+  "catch",
+  "finally",
+  "while",
+  ",",
+  ".",
+  "?.",
+  "(",
+  "[",
+  "`",
+  "=>",
+  "?",
+  ":",
+  ";",
+  "=",
+  "==",
+  "===",
+  "!=",
+  "!==",
+  "+",
+  "-",
+  "*",
+  "/",
+  "%",
+  "**",
+  "&&",
+  "||",
+  "??",
+  "&",
+  "|",
+  "^",
+  "<",
+  ">",
+  "<=",
+  ">=",
+  "instanceof",
+  "in"
+]);
+var PUNCTUATORS = [
+  ">>>=",
+  "...",
+  "===",
+  "!==",
+  "**=",
+  "<<=",
+  ">>=",
+  "&&=",
+  "||=",
+  "??=",
+  ">>>",
+  "=>",
+  "==",
+  "!=",
+  "<=",
+  ">=",
+  "&&",
+  "||",
+  "??",
+  "?.",
+  "++",
+  "--",
+  "+=",
+  "-=",
+  "*=",
+  "/=",
+  "%=",
+  "&=",
+  "|=",
+  "^=",
+  "<<",
+  ">>",
+  "**",
+  "{",
+  "}",
+  "(",
+  ")",
+  "[",
+  "]",
+  ";",
+  ",",
+  "<",
+  ">",
+  "+",
+  "-",
+  "*",
+  "/",
+  "%",
+  "&",
+  "|",
+  "^",
+  "!",
+  "~",
+  "?",
+  ":",
+  "=",
+  ".",
+  "@"
+];
+var NBSP = "\xA0";
+var BOM = "\uFEFF";
+var LS = "\u2028";
+var PS = "\u2029";
+var isLineTerm = (ch) => ch === "\n" || ch === "\r" || ch === LS || ch === PS;
+var endsStringLiteral = (ch) => ch === "\n" || ch === "\r";
+var isSpace = (ch) => ch === " " || ch === "	" || ch === "\v" || ch === "\f" || ch === NBSP || ch === BOM || isLineTerm(ch);
+var isDigit = (ch) => ch >= "0" && ch <= "9";
+var isIdentStart = (ch) => ch >= "a" && ch <= "z" || ch >= "A" && ch <= "Z" || ch === "_" || ch === "$" || ch === "#" || ch.charCodeAt(0) > 127;
+var isIdentPart = (ch) => isIdentStart(ch) || isDigit(ch);
+function lexJs(text, opts = {}) {
+  let res;
+  try {
+    res = lexInner(text, opts);
+  } catch (err) {
+    res = fail("internal", `${err?.message ?? err}`);
+  }
+  if (!res.ok && /\.[jt]sx$/i.test(opts.ext || "")) res.jsxSuspected = true;
+  return res;
+}
+function fail(reason, detail) {
+  return {
+    ok: false,
+    reason,
+    detail,
+    text: null,
+    code: null,
+    literals: null,
+    comments: null,
+    skips: [],
+    tokens: [],
+    statements: [],
+    specifiers: [],
+    preamble: { bom: false, shebangEnd: 0 },
+    jsxSuspected: false,
+    stats: null
+  };
+}
+function lexInner(text, opts) {
+  if (typeof text !== "string") return fail("not-a-string");
+  const n2 = text.length;
+  if (n2 > LEX_LIMITS.maxBytes) return fail("file-too-large");
+  const code = text.split("");
+  const literals = new Array(n2);
+  const comments = new Array(n2);
+  for (let k = 0; k < n2; k++) {
+    const filler = isLineTerm(text[k]) ? text[k] : " ";
+    literals[k] = filler;
+    comments[k] = filler;
+  }
+  const blankCode = (from, to) => {
+    for (let k = from; k < to; k++) if (!isLineTerm(text[k])) code[k] = " ";
+  };
+  const revealIn = (view, from, to) => {
+    for (let k = from; k < to; k++) view[k] = text[k];
+  };
+  const skips = [];
+  const tokens = [];
+  const statements = [];
+  const stack = [];
+  const tmplStack = [];
+  let depth = 0;
+  let jsxSuspected = /\.[jt]sx$/i.test(opts.ext || "");
+  let i2 = 0;
+  const preamble = { bom: false, shebangEnd: 0 };
+  if (n2 > 0 && text.charCodeAt(0) === 65279) {
+    preamble.bom = true;
+    i2 = 1;
+  }
+  if (text.startsWith("#!", i2)) {
+    let j = i2;
+    while (j < n2 && !isLineTerm(text[j])) j++;
+    blankCode(i2, j);
+    preamble.shebangEnd = j;
+    i2 = j;
+  }
+  let prev = null;
+  let sawNewline = false;
+  let stmtStart = -1;
+  let stmtFirst = null;
+  const pushToken = (type, start, end, extra) => {
+    const tok = {
+      type,
+      value: type === "punct" || type === "ident" ? text.slice(start, end) : "",
+      start,
+      end,
+      ...extra
+    };
+    tokens.push(tok);
+    return tok;
+  };
+  const peekSignificant = (from) => {
+    let k = from;
+    while (k < n2) {
+      const ch = text[k];
+      if (isSpace(ch)) {
+        k++;
+        continue;
+      }
+      if (ch === "/" && text[k + 1] === "/") {
+        while (k < n2 && !isLineTerm(text[k])) k++;
+        continue;
+      }
+      if (ch === "/" && text[k + 1] === "*") {
+        const close = text.indexOf("*/", k + 2);
+        if (close < 0) return null;
+        k = close + 2;
+        continue;
+      }
+      break;
+    }
+    if (k >= n2) return null;
+    if (isIdentStart(text[k])) {
+      let e = k;
+      while (e < n2 && isIdentPart(text[e])) e++;
+      return { at: k, word: text.slice(k, e) };
+    }
+    for (const p of PUNCTUATORS) if (text.startsWith(p, k)) return { at: k, word: p };
+    return { at: k, word: text[k] };
+  };
+  const closeStatement = (end, terminator) => {
+    if (stmtStart < 0) return;
+    if (statements.length >= LEX_LIMITS.maxStatements) throw new Error("too-many-statements");
+    statements.push({
+      start: stmtStart,
+      end,
+      index: statements.length,
+      firstToken: stmtFirst ?? "",
+      terminator,
+      kind: "expression",
+      line: 0,
+      gapBefore: { chars: 0, newlines: 0, hasComment: false },
+      asiRisky: terminator === "asi"
+    });
+    stmtStart = -1;
+    stmtFirst = null;
+  };
+  const regexAllowed = () => {
+    if (!prev) return true;
+    if (prev.type === "ident") return KW_EXPR_BEFORE.has(prev.value);
+    if (prev.type === "num" || prev.type === "str" || prev.type === "tpl" || prev.type === "regex") {
+      return false;
+    }
+    const v = prev.value;
+    if (v === "++" || v === "--") return false;
+    if (v === ")") return prev.controlHead === true;
+    if (v === "]") return false;
+    if (v === "}") return prev.blockClose === true;
+    return true;
+  };
+  const scanTemplateChunk = (from) => {
+    const frame = tmplStack[tmplStack.length - 1];
+    let j = from;
+    while (j < n2) {
+      const c3 = text[j];
+      if (c3 === "\\") {
+        j += 2;
+        continue;
+      }
+      if (c3 === "$" && text[j + 1] === "{") {
+        skips.push({ kind: "tpl", start: frame.chunkStart - 1, end: j, bodyStart: frame.chunkStart, bodyEnd: j });
+        revealIn(literals, frame.chunkStart, j);
+        blankCode(frame.chunkStart, j);
+        if (depth >= LEX_LIMITS.maxDelimiterDepth) return { error: "depth-limit" };
+        stack.push({ char: "{", kind: "tpl-sub", controlHead: false });
+        depth++;
+        prev = pushToken("punct", j, j + 2);
+        prev.value = "{";
+        sawNewline = false;
+        return { next: j + 2 };
+      }
+      if (c3 === "`") {
+        skips.push({ kind: "tpl", start: frame.chunkStart - 1, end: j + 1, bodyStart: frame.chunkStart, bodyEnd: j });
+        revealIn(literals, frame.chunkStart, j);
+        blankCode(frame.chunkStart, j);
+        tmplStack.pop();
+        prev = pushToken("tpl", j, j + 1);
+        sawNewline = false;
+        return { next: j + 1 };
+      }
+      j++;
+    }
+    return { error: "unterminated-template" };
+  };
+  while (i2 < n2) {
+    const ch = text[i2];
+    if (isSpace(ch)) {
+      if (isLineTerm(ch)) sawNewline = true;
+      i2++;
+      continue;
+    }
+    if (ch === "/" && text[i2 + 1] === "/") {
+      const start2 = i2;
+      let j = i2 + 2;
+      while (j < n2 && !isLineTerm(text[j])) j++;
+      skips.push({ kind: "line-comment", start: start2, end: j, bodyStart: start2 + 2, bodyEnd: j });
+      revealIn(comments, start2 + 2, j);
+      blankCode(start2, j);
+      i2 = j;
+      continue;
+    }
+    if (ch === "/" && text[i2 + 1] === "*") {
+      const start2 = i2;
+      const close = text.indexOf("*/", i2 + 2);
+      if (close < 0) return fail("unterminated-comment");
+      const end2 = close + 2;
+      skips.push({ kind: "block-comment", start: start2, end: end2, bodyStart: start2 + 2, bodyEnd: close });
+      revealIn(comments, start2 + 2, close);
+      blankCode(start2, end2);
+      for (let k = start2; k < end2; k++) if (isLineTerm(text[k])) sawNewline = true;
+      i2 = end2;
+      continue;
+    }
+    if (depth === 0 && stmtStart >= 0 && sawNewline && prev) {
+      const prevCanEnd = prev.type === "num" || prev.type === "str" || prev.type === "tpl" || prev.type === "regex" || prev.type === "ident" && (KW_CAN_END.has(prev.value) || !KW_CANNOT_END.has(prev.value)) && !KW_CONTINUES.has(prev.value) || prev.type === "punct" && (prev.value === ")" || prev.value === "]" || prev.value === "}" || prev.value === "++" || prev.value === "--");
+      let nextCannotContinue = false;
+      if (isIdentStart(ch)) {
+        let e = i2;
+        while (e < n2 && isIdentPart(text[e])) e++;
+        nextCannotContinue = !KW_CONTINUES.has(text.slice(i2, e));
+      } else if (ch === "@") {
+        nextCannotContinue = true;
+      }
+      if (prevCanEnd && nextCannotContinue && stmtFirst !== "@") {
+        closeStatement(prev.end, "asi");
+      }
+    }
+    if (depth === 0 && stmtStart < 0) {
+      stmtStart = i2;
+      stmtFirst = null;
+    }
+    if (ch === "'" || ch === '"') {
+      const start2 = i2;
+      let j = i2 + 1;
+      let closed = false;
+      while (j < n2) {
+        const c3 = text[j];
+        if (c3 === "\\") {
+          j += 2;
+          continue;
+        }
+        if (c3 === ch) {
+          closed = true;
+          break;
+        }
+        if (endsStringLiteral(c3)) return fail("unterminated-string");
+        j++;
+      }
+      if (!closed) return fail("unterminated-string");
+      skips.push({ kind: ch === "'" ? "sq" : "dq", start: start2, end: j + 1, bodyStart: start2 + 1, bodyEnd: j });
+      revealIn(literals, start2 + 1, j);
+      blankCode(start2 + 1, j);
+      prev = pushToken("str", start2, j + 1);
+      if (stmtFirst === null) stmtFirst = "str";
+      sawNewline = false;
+      i2 = j + 1;
+      continue;
+    }
+    if (ch === "`") {
+      if (tmplStack.length >= LEX_LIMITS.maxTemplateDepth) return fail("template-depth-limit");
+      const start2 = i2;
+      tmplStack.push({ start: start2, chunkStart: i2 + 1 });
+      prev = pushToken("tpl", start2, start2 + 1);
+      if (stmtFirst === null) stmtFirst = "tpl";
+      sawNewline = false;
+      const res = scanTemplateChunk(i2 + 1);
+      if (res.error) return fail(res.error);
+      i2 = res.next;
+      continue;
+    }
+    if (ch === "/" && regexAllowed()) {
+      const start2 = i2;
+      let j = i2 + 1;
+      let inClass = false;
+      let closed = false;
+      while (j < n2) {
+        const c3 = text[j];
+        if (c3 === "\\") {
+          j += 2;
+          continue;
+        }
+        if (isLineTerm(c3)) break;
+        if (c3 === "[") inClass = true;
+        else if (c3 === "]") inClass = false;
+        else if (c3 === "/" && !inClass) {
+          closed = true;
+          break;
+        }
+        j++;
+      }
+      if (!closed) return fail("unterminated-regex");
+      let e = j + 1;
+      while (e < n2 && /[dgimsuvy]/.test(text[e])) e++;
+      if (e - start2 > LEX_LIMITS.maxRegexSpan) return fail("regex-span-too-long");
+      skips.push({ kind: "regex", start: start2, end: e, bodyStart: start2 + 1, bodyEnd: j });
+      blankCode(start2 + 1, j);
+      prev = pushToken("regex", start2, e);
+      if (stmtFirst === null) stmtFirst = "regex";
+      sawNewline = false;
+      i2 = e;
+      continue;
+    }
+    if (isDigit(ch) || ch === "." && isDigit(text[i2 + 1])) {
+      const start2 = i2;
+      let j = i2;
+      if (ch === "0" && /[xXbBoO]/.test(text[j + 1] || "")) {
+        j += 2;
+        while (j < n2 && /[0-9a-fA-F_]/.test(text[j])) j++;
+      } else {
+        while (j < n2 && /[0-9_]/.test(text[j])) j++;
+        if (text[j] === ".") {
+          j++;
+          while (j < n2 && /[0-9_]/.test(text[j])) j++;
+        }
+        if (/[eE]/.test(text[j] || "")) {
+          j++;
+          if (text[j] === "+" || text[j] === "-") j++;
+          while (j < n2 && /[0-9_]/.test(text[j])) j++;
+        }
+      }
+      if (text[j] === "n") j++;
+      prev = pushToken("num", start2, j);
+      if (stmtFirst === null) stmtFirst = "num";
+      sawNewline = false;
+      i2 = j;
+      continue;
+    }
+    if (isIdentStart(ch)) {
+      const start2 = i2;
+      let j = i2;
+      while (j < n2 && isIdentPart(text[j])) j++;
+      prev = pushToken("ident", start2, j);
+      if (stmtFirst === null) stmtFirst = prev.value;
+      sawNewline = false;
+      i2 = j;
+      continue;
+    }
+    if (ch === "<" && !jsxSuspected && regexAllowed() && /[A-Za-z_$>]/.test(text[i2 + 1] || "")) {
+      jsxSuspected = true;
+    }
+    let punct = null;
+    for (const p of PUNCTUATORS) {
+      if (text.startsWith(p, i2)) {
+        punct = p;
+        break;
+      }
+    }
+    if (punct === null) punct = ch;
+    if (punct === "?." && isDigit(text[i2 + 2] || "")) punct = "?";
+    const start = i2;
+    const end = i2 + punct.length;
+    if (punct === "(" || punct === "[" || punct === "{") {
+      if (depth >= LEX_LIMITS.maxDelimiterDepth) return fail("depth-limit");
+      const kind = punct === "{" ? braceKind(prev, stmtStart === start) : "group";
+      const controlHead = punct === "(" && prev?.type === "ident" && (prev.value === "if" || prev.value === "while" || prev.value === "for" || prev.value === "with");
+      stack.push({ char: punct, kind, controlHead });
+      depth++;
+      prev = pushToken("punct", start, end);
+      sawNewline = false;
+      i2 = end;
+      continue;
+    }
+    if (punct === ")" || punct === "]" || punct === "}") {
+      if (depth === 0 || stack.length === 0) return fail("unbalanced-close");
+      const frame = stack.pop();
+      const expected = punct === ")" ? "(" : punct === "]" ? "[" : "{";
+      if (frame.char !== expected) return fail("mismatched-delimiter");
+      depth--;
+      prev = pushToken("punct", start, end, {
+        controlHead: frame.controlHead,
+        blockClose: punct === "}" && (frame.kind === "block" || frame.kind === "body")
+      });
+      if (stmtFirst === null) stmtFirst = punct;
+      sawNewline = false;
+      i2 = end;
+      if (frame.kind === "tpl-sub") {
+        const tpl = tmplStack[tmplStack.length - 1];
+        if (!tpl) return fail("unterminated-template");
+        tpl.chunkStart = end;
+        const res = scanTemplateChunk(end);
+        if (res.error) return fail(res.error);
+        i2 = res.next;
+        continue;
+      }
+      if (punct === "}" && depth === 0 && prev.blockClose && BLOCK_STARTERS.has(stmtFirst)) {
+        const nxt = peekSignificant(end);
+        if (!nxt || !CONTINUES_AFTER_BRACE.has(nxt.word)) closeStatement(end, "}");
+      }
+      continue;
+    }
+    prev = pushToken("punct", start, end);
+    if (stmtFirst === null) stmtFirst = punct;
+    sawNewline = false;
+    i2 = end;
+    if (punct === ";" && depth === 0) closeStatement(end, ";");
+  }
+  if (depth !== 0 || stack.length !== 0) return fail("unbalanced-eof");
+  if (tmplStack.length !== 0) return fail("unterminated-template");
+  if (stmtStart >= 0) closeStatement(prev ? prev.end : n2, "eof");
+  const codeStr = code.join("");
+  {
+    let s = 0;
+    for (let k = preamble.shebangEnd; k < n2; k++) {
+      if (isSpace(codeStr[k])) continue;
+      while (s < statements.length && statements[s].end <= k) s++;
+      if (s >= statements.length || k < statements[s].start) {
+        return fail("untiled-significant-text", `offset ${k}`);
+      }
+    }
+  }
+  const lineStarts = [0];
+  for (let k = 0; k < n2; k++) if (text[k] === "\n") lineStarts.push(k + 1);
+  const lineOf = (off) => {
+    let lo = 0;
+    let hi = lineStarts.length - 1;
+    while (lo < hi) {
+      const mid = lo + hi + 1 >> 1;
+      if (lineStarts[mid] <= off) lo = mid;
+      else hi = mid - 1;
+    }
+    return lo + 1;
+  };
+  for (let k = 0; k < statements.length; k++) {
+    const st = statements[k];
+    st.line = lineOf(st.start);
+    st.kind = classifyStatement(codeStr.slice(st.start, st.end), st.firstToken);
+    const gapFrom = k === 0 ? preamble.shebangEnd : statements[k - 1].end;
+    const gapRaw = text.slice(gapFrom, st.start);
+    st.gapBefore = {
+      chars: gapRaw.length,
+      newlines: (gapRaw.match(/\n/g) || []).length,
+      hasComment: skips.some(
+        (sk) => (sk.kind === "line-comment" || sk.kind === "block-comment") && sk.start >= gapFrom && sk.end <= st.start
+      )
+    };
+  }
+  const lex = {
+    ok: true,
+    reason: null,
+    text,
+    code: codeStr,
+    literals: literals.join(""),
+    comments: comments.join(""),
+    skips,
+    tokens,
+    statements,
+    preamble,
+    jsxSuspected,
+    lineStarts,
+    specifiers: [],
+    stats: { lines: lineStarts.length, statements: statements.length }
+  };
+  lex.specifiers = extractSpecifiers(lex);
+  return lex;
+}
+function braceKind(prev, atStatementStart) {
+  if (atStatementStart || !prev) return "block";
+  if (prev.type === "punct") {
+    const v = prev.value;
+    if (v === ")") return "body";
+    if (v === "}" || v === ";") return "block";
+    return "object";
+  }
+  if (prev.type === "ident") {
+    const v = prev.value;
+    if (v === "else" || v === "do" || v === "try" || v === "finally") return "block";
+    if (v === "return" || v === "typeof" || v === "case") return "object";
+    return "body";
+  }
+  return "object";
+}
+function classifyStatement(codeSlice, firstToken) {
+  const s = codeSlice.trimStart();
+  if (firstToken === "import") return "import";
+  if (firstToken === "export") return "export";
+  if (/^module\s*\.\s*exports\b/.test(s)) return "module-exports";
+  if (/^exports\s*\.\s*[A-Za-z_$][\w$]*\s*=/.test(s)) return "module-exports";
+  if (/^Object\s*\.\s*defineProperty\s*\(\s*exports\b/.test(s)) return "module-exports";
+  if (firstToken === "str") return "directive";
+  if (firstToken === "{") return "block";
+  if (firstToken === ";") return "empty";
+  if (firstToken === "const" || firstToken === "let" || firstToken === "var" || firstToken === "function" || firstToken === "class" || firstToken === "enum" || firstToken === "type" || firstToken === "interface" || firstToken === "namespace" || firstToken === "declare" || firstToken === "async") {
+    return "declaration";
+  }
+  return "expression";
+}
+function extractSpecifiers(lex) {
+  const out = [];
+  const { tokens, text } = lex;
+  const litOf = (tok) => text.slice(tok.start + 1, tok.end - 1);
+  const escaped = (tok) => /\\x|\\u|\\[0-7]/.test(text.slice(tok.start, tok.end));
+  for (let k = 0; k < tokens.length; k++) {
+    const t = tokens[k];
+    if (t.type !== "ident") continue;
+    if ((t.value === "require" || t.value === "import") && tokens[k + 1]?.value === "(") {
+      const arg = tokens[k + 2];
+      if (arg?.type === "str") {
+        out.push({
+          spec: litOf(arg),
+          raw: litOf(arg),
+          start: arg.start,
+          end: arg.end,
+          form: t.value === "require" ? "require" : "dynamic-import",
+          // An escaped or concatenated specifier is itself evidence of hiding.
+          obfuscated: escaped(arg) || tokens[k + 3]?.value === "+"
+        });
+      }
+      continue;
+    }
+    if (t.value === "import") {
+      for (let j = k + 1; j < tokens.length && j < k + 64; j++) {
+        if (tokens[j].type === "str") {
+          out.push({
+            spec: litOf(tokens[j]),
+            raw: litOf(tokens[j]),
+            start: tokens[j].start,
+            end: tokens[j].end,
+            form: "import",
+            obfuscated: escaped(tokens[j])
+          });
+          break;
+        }
+        if (tokens[j].value === ";") break;
+      }
+    }
+  }
+  return out;
+}
+var _cache = { text: null, ext: null, res: null };
+function lexCached(text, opts = {}) {
+  const ext = opts.ext || "";
+  if (_cache.text === text && _cache.ext === ext) return _cache.res;
+  const res = lexJs(text, opts);
+  _cache = { text, ext, res };
+  return res;
+}
+function regionOf(lex, start, end) {
+  const lo = Math.max(0, start);
+  const hi = Math.min(lex.text.length, end);
+  return {
+    start: lo,
+    end: hi,
+    raw: lex.text.slice(lo, hi),
+    code: lex.code.slice(lo, hi),
+    literals: lex.literals.slice(lo, hi),
+    comments: lex.comments.slice(lo, hi),
+    bytes: hi - lo,
+    literalBodies: lex.skips.filter(
+      (s) => (s.kind === "sq" || s.kind === "dq" || s.kind === "tpl") && s.bodyStart >= lo && s.bodyEnd <= hi
+    ).map((s) => lex.text.slice(s.bodyStart, s.bodyEnd)),
+    specifiers: lex.specifiers.filter((s) => s.start >= lo && s.end <= hi)
+  };
+}
+function regionOfStatements(lex, stmts) {
+  if (!stmts.length) return regionOf(lex, 0, 0);
+  let lo = Infinity;
+  let hi = -Infinity;
+  for (const s of stmts) {
+    if (s.start < lo) lo = s.start;
+    if (s.end > hi) hi = s.end;
+  }
+  return regionOf(lex, lo, hi);
+}
+var tokensIn = (lex, stmt) => lex.tokens.filter((t) => t.start >= stmt.start && t.end <= stmt.end);
+function bindingsOf(lex, stmt) {
+  const out = /* @__PURE__ */ new Set();
+  const toks = tokensIn(lex, stmt);
+  if (!toks.length || toks[0].type !== "ident") return out;
+  const first = toks[0].value;
+  if (first === "const" || first === "let" || first === "var") {
+    let d = 0;
+    let expectName = true;
+    for (let k = 1; k < toks.length; k++) {
+      const t = toks[k];
+      if (t.type === "punct") {
+        if (t.value === "(" || t.value === "[" || t.value === "{") d++;
+        else if (t.value === ")" || t.value === "]" || t.value === "}") d--;
+        else if (t.value === "=" && d === 0) expectName = false;
+        else if (t.value === "," && d <= 0) expectName = true;
+        continue;
+      }
+      if (t.type === "ident" && expectName) out.add(t.value);
+    }
+    return out;
+  }
+  if (first === "function" || first === "class" || first === "enum" || first === "namespace" || first === "interface" || first === "type" || first === "async") {
+    for (let k = 1; k < toks.length; k++) {
+      if (toks[k].type === "ident" && toks[k].value !== "function") {
+        out.add(toks[k].value);
+        break;
+      }
+    }
+  }
+  return out;
+}
+function referencesOf(lex, stmts) {
+  const out = /* @__PURE__ */ new Set();
+  for (const stmt of stmts) {
+    const toks = tokensIn(lex, stmt);
+    for (let k = 0; k < toks.length; k++) {
+      const t = toks[k];
+      if (t.type !== "ident") continue;
+      const p = toks[k - 1];
+      if (p && p.type === "punct" && (p.value === "." || p.value === "?.")) continue;
+      if (AMBIENT_GLOBALS.has(t.value)) continue;
+      out.add(t.value);
+    }
+  }
+  return out;
+}
+function sliceOut(text, ranges) {
+  const sorted = [...ranges].sort((a2, b) => b.start - a2.start);
+  let out = text;
+  let removed = 0;
+  for (const r of sorted) {
+    if (!Number.isInteger(r.start) || !Number.isInteger(r.end)) return null;
+    if (r.start < 0 || r.end < r.start || r.end > out.length) return null;
+    removed += r.end - r.start;
+    out = out.slice(0, r.start) + out.slice(r.end);
+  }
+  return { kept: out, removedBytes: removed };
+}
+function verifySplice(text, ranges, opts = {}) {
+  if (!Array.isArray(ranges) || ranges.length === 0) return { ok: false, reason: "no-ranges" };
+  const lex = opts.lex ?? lexCached(text, { ext: opts.ext });
+  if (!lex.ok) return { ok: false, reason: `lex-failed:${lex.reason}` };
+  const sorted = [...ranges].sort((a2, b) => a2.start - b.start);
+  for (let k = 0; k < sorted.length; k++) {
+    const r = sorted[k];
+    if (!Number.isInteger(r.start) || !Number.isInteger(r.end)) {
+      return { ok: false, reason: "range-not-integer" };
+    }
+    if (r.start < 0 || r.end > text.length || r.end <= r.start) {
+      return { ok: false, reason: "range-out-of-bounds" };
+    }
+    if (r.start < lex.preamble.shebangEnd) return { ok: false, reason: "range-crosses-shebang" };
+    if (k > 0 && r.start < sorted[k - 1].end) return { ok: false, reason: "ranges-overlap" };
+  }
+  for (const st of lex.statements) {
+    for (const r of sorted) {
+      const overlaps = st.start < r.end && st.end > r.start;
+      const contained = st.start >= r.start && st.end <= r.end;
+      if (overlaps && !contained) return { ok: false, reason: "range-splits-a-statement" };
+    }
+  }
+  const merged = [];
+  for (const r of sorted) {
+    const last = merged[merged.length - 1];
+    if (last && lex.code.slice(last.end, r.start).trim() === "") {
+      last.end = Math.max(last.end, r.end);
+      continue;
+    }
+    merged.push({ ...r });
+  }
+  const floor = lex.preamble.shebangEnd;
+  const extended = merged.map((r) => {
+    let start = r.start;
+    for (; ; ) {
+      const before = text.slice(floor, start);
+      const m = /(?:[ \t]*(?:\r?\n)[ \t]*)$|[ \t]+$/.exec(before);
+      if (!m || m[0].length === 0) break;
+      start -= m[0].length;
+      if (start <= floor) {
+        start = floor;
+        break;
+      }
+    }
+    let end = r.end;
+    while (end < text.length && /[ \t]/.test(text[end])) end++;
+    if (text[end] === "\r") end++;
+    if (text[end] === "\n") end++;
+    for (; ; ) {
+      const m = /^[ \t]*\r?\n/.exec(text.slice(end));
+      if (!m) break;
+      end += m[0].length;
+    }
+    return { start: Math.max(start, floor), end, role: r.role };
+  });
+  for (let k = 1; k < extended.length; k++) {
+    if (extended[k].start < extended[k - 1].end) extended[k].start = extended[k - 1].end;
+    if (extended[k].end <= extended[k].start) {
+      return { ok: false, reason: "ranges-collapsed-after-extension" };
+    }
+  }
+  const spliced = sliceOut(text, extended);
+  if (!spliced) return { ok: false, reason: "splice-invalid" };
+  const kept = spliced.kept.replace(/\s+$/, "") + "\n";
+  if (kept.trim().length === 0) return { ok: false, reason: "would-empty-file" };
+  const after = lexJs(kept, { ext: opts.ext });
+  if (!after.ok) return { ok: false, reason: `result-unlexable:${after.reason}` };
+  const removedStatements = lex.statements.filter(
+    (s) => extended.some((r) => s.start >= r.start && s.end <= r.end)
+  ).length;
+  const expected = lex.statements.length - removedStatements;
+  if (after.statements.length !== expected) {
+    return { ok: false, reason: `statement-count-mismatch:${after.statements.length}!=${expected}` };
+  }
+  if (opts.expectExport && !after.statements.some((s) => s.kind === "export" || s.kind === "module-exports")) {
+    return { ok: false, reason: "no-export-remains" };
+  }
+  return { ok: true, kept, removedBytes: spliced.removedBytes, ranges: extended };
+}
+
+// src/capability.js
+var STRUCTURAL_KINDS = /* @__PURE__ */ new Set(["import", "export", "module-exports", "directive"]);
+var ILLEGAL_STATEMENT_START = /* @__PURE__ */ new Set([
+  ")",
+  "]",
+  "}",
+  ",",
+  ".",
+  "?.",
+  "=>",
+  ":",
+  "=",
+  "==",
+  "===",
+  "!=",
+  "!==",
+  "&&",
+  "||",
+  "??",
+  "*",
+  "/",
+  "%",
+  "**",
+  "<",
+  ">",
+  "<=",
+  ">=",
+  "|",
+  "&",
+  "^",
+  "+=",
+  "-=",
+  "*=",
+  "/=",
+  "%=",
+  "&&=",
+  "||=",
+  "??="
+]);
+function containsWord(hay, word) {
+  if (!hay || !word) return false;
+  let from = 0;
+  for (; ; ) {
+    const at = hay.indexOf(word, from);
+    if (at < 0) return false;
+    const before = at === 0 ? "" : hay[at - 1];
+    const after = at + word.length >= hay.length ? "" : hay[at + word.length];
+    const isPart = (c3) => c3 !== "" && /[A-Za-z0-9_$]/.test(c3);
+    if (!isPart(before) && !isPart(after)) return true;
+    from = at + 1;
+  }
+}
+function pickView(region, view) {
+  if (view === "code") return region.code;
+  if (view === "literals") return region.literals;
+  if (view === "any") return `${region.code}
+${region.literals}`;
+  return null;
+}
+function scoreCapabilities(region, opts = {}) {
+  const rules = opts.rules ?? CAPABILITY_RULES;
+  const risky = opts.riskyModules ?? RISKY_MODULES;
+  const variantSets = opts.variantSets ?? VARIANT_IDENT_SETS;
+  const raw = [];
+  const byId = new Map(rules.map((r) => [r.id, r]));
+  let sawObfuscatedSpecifier = false;
+  for (const spec of region.specifiers ?? []) {
+    if (spec.obfuscated) sawObfuscatedSpecifier = true;
+    const bare = String(spec.spec).replace(/^node:/, "");
+    const info = risky.get(bare);
+    if (info) {
+      raw.push({
+        id: `mod.${bare}`,
+        weight: info.weight,
+        group: info.group,
+        label: info.label,
+        weak: false
+      });
+    }
+  }
+  if (sawObfuscatedSpecifier) {
+    const r = byId.get("obf.spec-escape");
+    if (r) raw.push({ id: r.id, weight: r.weight, group: r.group, label: r.label, weak: !!r.weak });
+  }
+  const memberHit = /* @__PURE__ */ new Set();
+  for (const rule of rules) {
+    if (!rule.re) continue;
+    let matched = false;
+    if (rule.wholeLiteral) {
+      matched = (region.literalBodies ?? []).some((body) => rule.re.test(body));
+    } else {
+      const hay = pickView(region, rule.view);
+      matched = hay ? rule.re.test(hay) : false;
+    }
+    if (!matched) continue;
+    if (rule.weight === 0) memberHit.add(rule.id);
+    else raw.push({ id: rule.id, weight: rule.weight, group: rule.group, label: rule.label, weak: !!rule.weak });
+  }
+  for (const rule of rules) {
+    if (!Array.isArray(rule.requires)) continue;
+    if (rule.requires.every((id) => memberHit.has(id))) {
+      raw.push({ id: rule.id, weight: rule.weight, group: rule.group, label: rule.label, weak: !!rule.weak });
+    }
+  }
+  for (const set of variantSets) {
+    const hay = pickView(region, set.view);
+    if (!hay) continue;
+    const found = set.idents.filter((ident) => containsWord(hay, ident));
+    if (found.length >= set.minHits) {
+      raw.push({
+        id: `variant.${set.id}`,
+        weight: set.weight,
+        group: set.group,
+        label: `${set.label} (${found.length}/${set.idents.length} markers)`,
+        weak: false
+      });
+    }
+  }
+  const best = /* @__PURE__ */ new Map();
+  for (const h2 of raw) {
+    const key = h2.group ?? `~${h2.id}`;
+    const cur = best.get(key);
+    if (!cur || h2.weight > cur.weight) best.set(key, h2);
+  }
+  let score = 0;
+  const distinctGroups = /* @__PURE__ */ new Set();
+  for (const [key, h2] of best) {
+    score += h2.weight;
+    if (!h2.weak) distinctGroups.add(key);
+  }
+  const countedIds = new Set([...best.values()].map((h2) => h2.id));
+  return {
+    score,
+    distinct: distinctGroups.size,
+    hits: raw.map((h2) => ({ ...h2, counted: countedIds.has(h2.id) })),
+    degraded: false
+  };
+}
+function scoreForm(region, fileText, opts = {}) {
+  const R = opts.rules ?? FORM_RULES;
+  const raw = region.raw ?? "";
+  const lines = raw.split("\n");
+  const maxLineLen = lines.reduce((m, l) => Math.max(m, l.length), 0);
+  const regionBytes = region.bytes ?? raw.length;
+  const fileBytes = (fileText ?? "").length;
+  const commentChars = (region.comments ?? "").replace(/\s/g, "").length;
+  const punct = (raw.match(/[^\w\s]/g) || []).length;
+  const alnum = (raw.match(/[A-Za-z0-9]/g) || []).length;
+  const punctRatio = punct / Math.max(1, alnum);
+  const idents = (region.code ?? "").match(/[A-Za-z_$][A-Za-z0-9_$]*/g) || [];
+  const shortIdents = idents.filter((s) => s.length <= 2).length;
+  const shortIdentRatio = idents.length ? shortIdents / idents.length : 0;
+  const byteShare = fileBytes > 0 ? regionBytes / fileBytes : 0;
+  const largestStatementBytes = (opts.statements ?? []).reduce(
+    (m, s) => Math.max(m, s.end - s.start),
+    0
+  );
+  const hits = [];
+  const add = (id, weight, label, value) => hits.push({ id, weight, label, value });
+  for (const tier of R.longLine) {
+    if (maxLineLen >= tier.chars) {
+      add("form.long-line", tier.weight, tier.label, maxLineLen);
+      break;
+    }
+  }
+  if (regionBytes >= R.noComments.minBytes && commentChars === 0) {
+    add("form.no-comments", R.noComments.weight, R.noComments.label, regionBytes);
+  }
+  if (punctRatio >= R.punctDense.min) {
+    add("form.punct-dense", R.punctDense.weight, R.punctDense.label, +punctRatio.toFixed(2));
+  }
+  if (fileBytes >= R.byteShare.minFileBytes && regionBytes >= R.byteShare.minRegionBytes && byteShare >= R.byteShare.min) {
+    add("form.byte-share", R.byteShare.weight, R.byteShare.label, +byteShare.toFixed(2));
+  }
+  if (idents.length >= R.identObfuscated.minIdents && shortIdentRatio >= R.identObfuscated.min) {
+    add("form.ident-obfuscated", R.identObfuscated.weight, R.identObfuscated.label, +shortIdentRatio.toFixed(2));
+  }
+  if (largestStatementBytes >= R.singleStatementBulk.minBytes) {
+    add("form.single-statement-bulk", R.singleStatementBulk.weight, R.singleStatementBulk.label, largestStatementBytes);
+  }
+  return {
+    score: hits.reduce((s, h2) => s + h2.weight, 0),
+    hits,
+    metrics: {
+      maxLineLen,
+      lineCount: lines.length,
+      regionBytes,
+      byteShare,
+      commentChars,
+      punctRatio,
+      shortIdentRatio,
+      largestStatementBytes
+    }
+  };
+}
+function balanced(codeSlice) {
+  let p = 0;
+  let b = 0;
+  let c3 = 0;
+  for (const ch of codeSlice) {
+    if (ch === "(") p++;
+    else if (ch === ")") p--;
+    else if (ch === "[") b++;
+    else if (ch === "]") b--;
+    else if (ch === "{") c3++;
+    else if (ch === "}") c3--;
+    if (p < 0 || b < 0 || c3 < 0) return false;
+  }
+  return p === 0 && b === 0 && c3 === 0;
+}
+function partitionTopLevel(text, lex, opts = {}) {
+  const empty = {
+    ok: false,
+    anchor: null,
+    payload: [],
+    kept: [],
+    shims: [],
+    preAnchor: [],
+    flags: { interleaved: false, midFile: false, noAnchor: true, demoted: [] }
+  };
+  if (!lex?.ok) return { ...empty, reason: `lex-failed:${lex?.reason ?? "unknown"}` };
+  const statements = lex.statements;
+  let anchor = null;
+  for (const st of statements) {
+    if (st.kind === "export" || st.kind === "module-exports") anchor = st;
+  }
+  const trailing = /* @__PURE__ */ new Set();
+  for (let k = statements.length - 1; k >= 0; k--) {
+    if (STRUCTURAL_KINDS.has(statements[k].kind)) break;
+    trailing.add(statements[k].index);
+  }
+  const isPadded = (st) => {
+    const g = st.gapBefore;
+    if (g.hasComment) return false;
+    return g.newlines >= 3 || g.chars >= 200 && g.newlines >= 2;
+  };
+  const candidates = [];
+  const preAnchor = [];
+  for (const st of statements) {
+    const positional = [];
+    if (anchor && st.start >= anchor.end && trailing.has(st.index)) positional.push("post-export");
+    if (isPadded(st)) positional.push("padded");
+    if (positional.length === 0) continue;
+    if (STRUCTURAL_KINDS.has(st.kind)) continue;
+    const codeSlice = lex.code.slice(st.start, st.end);
+    if (containsWord(codeSlice, "import") || containsWord(codeSlice, "export")) continue;
+    if (!balanced(codeSlice)) continue;
+    if (ILLEGAL_STATEMENT_START.has(st.firstToken)) continue;
+    if (anchor && st.start < anchor.end) {
+      preAnchor.push({ st, positional });
+      continue;
+    }
+    candidates.push({ st, positional });
+  }
+  const surviving = [];
+  for (const cand of candidates) {
+    const region = regionOf(lex, cand.st.start, cand.st.end);
+    const own = scoreCapabilities(region);
+    const benign = BENIGN_TAIL_RES.some((re) => re.test(region.code));
+    if (benign && own.score < VERDICT_THRESHOLDS.configCapability) continue;
+    surviving.push(cand);
+  }
+  let payload = surviving.slice();
+  const demoted = [];
+  for (; ; ) {
+    const payloadIdx2 = new Set(payload.map((p) => p.st.index));
+    const keptStmts = statements.filter((s) => !payloadIdx2.has(s.index));
+    const keptRefs = referencesOf(lex, keptStmts);
+    const guilty = payload.find((p) => {
+      for (const name of bindingsOf(lex, p.st)) if (keptRefs.has(name)) return true;
+      return false;
+    });
+    if (!guilty) break;
+    demoted.push({ index: guilty.st.index, why: "referenced by surviving code" });
+    payload = payload.filter((p) => p.st.index !== guilty.st.index);
+  }
+  const payloadIdx = new Set(payload.map((p) => p.st.index));
+  const kept = statements.filter((s) => !payloadIdx.has(s.index));
+  const shimDefs = opts.shims ?? PAYLOAD_SHIMS;
+  const shimMatches = [];
+  for (const st of statements) {
+    if (payloadIdx.has(st.index)) continue;
+    if (anchor && st.start >= anchor.end) continue;
+    const normalized = lex.text.slice(st.start, st.end).replace(/\s+/g, " ").trim();
+    const def = shimDefs.find((s) => s.re.test(normalized));
+    if (def) shimMatches.push({ st, shimId: def.id, introduces: def.introduces });
+  }
+  const shims = [];
+  if (shimMatches.length > 0) {
+    const shimIdx = new Set(shimMatches.map((s) => s.st.index));
+    const survivingCode = kept.filter((s) => !shimIdx.has(s.index)).map((s) => lex.code.slice(s.start, s.end)).join("\n");
+    const stillUsed = shimMatches.some(
+      (s) => s.introduces.some((name) => containsWord(survivingCode, name))
+    );
+    if (!stillUsed) shims.push(...shimMatches);
+  }
+  const lastPayload = payload.length ? payload[payload.length - 1].st : null;
+  const firstPayload = payload.length ? payload[0].st : null;
+  const flags = {
+    // A structural statement appearing after the payload means the payload is
+    // wedged between real module code, not appended to the end.
+    interleaved: !!firstPayload && kept.some((s) => STRUCTURAL_KINDS.has(s.kind) && s.start > firstPayload.start),
+    midFile: !anchor && !!lastPayload && lex.code.slice(lastPayload.end).trim().length > 0,
+    noAnchor: anchor === null,
+    demoted
+  };
+  return {
+    ok: true,
+    reason: null,
+    anchor: anchor ? { start: anchor.start, end: anchor.end, kind: anchor.kind } : null,
+    payload,
+    kept,
+    shims,
+    preAnchor,
+    flags
+  };
+}
+function verdictForFile(input2) {
+  const {
+    relPath,
+    fileText,
+    lex,
+    partition,
+    capability,
+    form,
+    knownVariantId = null,
+    spliceOk = null,
+    spliceReason = null
+  } = input2;
+  const T = VERDICT_THRESHOLDS;
+  const none = (reason) => ({
+    verdict: "none",
+    contentConfirmed: false,
+    confidence: "low",
+    action: null,
+    ranges: [],
+    score: { capability: 0, distinct: 0, form: 0 },
+    reasons: [],
+    blockers: [],
+    reason: reason ?? null
+  });
+  const cap = capability?.score ?? 0;
+  const dist = capability?.distinct ?? 0;
+  const frm = form?.score ?? 0;
+  const score = { capability: cap, distinct: dist, form: frm };
+  const evidence = [
+    ...(capability?.hits ?? []).filter((h2) => h2.counted).map((h2) => h2.label),
+    ...(form?.hits ?? []).map((h2) => h2.label)
+  ];
+  if (!lex?.ok || !partition?.ok) {
+    if (cap >= T.unlexable.capability && frm >= T.unlexable.form) {
+      return {
+        verdict: "manual-review",
+        contentConfirmed: false,
+        confidence: "low",
+        action: "manual-review",
+        ranges: [],
+        score,
+        reasons: evidence,
+        blockers: ["region-unlexable"],
+        reason: `could not be tokenized safely (${lex?.reason ?? partition?.reason}) but scores high on capability \u2014 review manually`
+      };
+    }
+    return none(`not tokenizable (${lex?.reason ?? partition?.reason})`);
+  }
+  const hasPayload = partition.payload.length > 0;
+  const hasShim = partition.shims.length > 0;
+  if (!hasPayload) {
+    if (hasShim) {
+      return {
+        verdict: "shim-only",
+        contentConfirmed: false,
+        confidence: "low",
+        action: "strip-js-payload",
+        autoFix: true,
+        ranges: partition.shims.map((s) => ({ start: s.st.start, end: s.st.end, role: "shim" })),
+        score,
+        reasons: ["an injected createRequire shim remains with no payload and nothing using it"],
+        blockers: [],
+        reason: "leftover createRequire shim injected by PolinRider \u2014 the payload is already gone and nothing remaining uses require"
+      };
+    }
+    if (partition.preAnchor.length > 0 && cap >= T.anywhereCapability) {
+      return {
+        verdict: "manual-review",
+        contentConfirmed: false,
+        confidence: "low",
+        action: "manual-review",
+        ranges: [],
+        score,
+        reasons: evidence,
+        blockers: ["payload-before-export-boundary"],
+        reason: "privileged code sits before the export boundary \u2014 reported, never auto-removed"
+      };
+    }
+    return none("no code outside the legitimate module region");
+  }
+  const isConfig = isConfigBasename(relPath);
+  const autoStrip = isConfig && cap >= T.configCapability || cap >= T.anywhereCapability || cap >= T.capabilityWithForm.capability && frm >= T.capabilityWithForm.form;
+  const blockers = [];
+  if (autoStrip) {
+    if (!knownVariantId) {
+      if (dist < T.minDistinct) blockers.push("single-capability-group");
+      if (frm < T.minForm) blockers.push("no-form-anomaly");
+    }
+    if (lex.jsxSuspected) blockers.push("jsx-unsafe-to-cut");
+    if (capability?.degraded) blockers.push("region-unlexable");
+    if (partition.flags.noAnchor) blockers.push("no-export-boundary");
+    if (partition.flags.midFile) blockers.push("payload-not-at-file-tail");
+    if (partition.flags.interleaved && cap < T.anywhereCapability) {
+      blockers.push("interleaved-needs-more-evidence");
+    }
+    if (partition.flags.demoted.length > 0 && cap < T.anywhereCapability) {
+      blockers.push("linkage-demotions-present");
+    }
+    if (spliceOk === false) blockers.push(`splice-postcondition-failed:${spliceReason ?? "unknown"}`);
+  }
+  const ranges = input2.ranges ?? candidateRanges(partition, fileText);
+  if (autoStrip && blockers.length === 0) {
+    return {
+      verdict: "confirmed",
+      contentConfirmed: true,
+      confidence: "high",
+      action: "strip-js-payload",
+      ranges,
+      score,
+      reasons: evidence,
+      blockers: [],
+      reason: describe(evidence, score, partition)
+    };
+  }
+  if (cap >= T.reviewCapability || frm >= T.reviewForm) {
+    return {
+      verdict: "manual-review",
+      contentConfirmed: knownVariantId != null || cap >= T.anywhereCapability && dist >= T.minDistinct,
+      confidence: cap >= T.configCapability ? "high" : "low",
+      action: "manual-review",
+      ranges: [],
+      score,
+      reasons: evidence,
+      blockers,
+      reason: `${describe(evidence, score, partition)}${blockers.length ? ` \u2014 not auto-removed (${blockers.join(", ")})` : ""}`
+    };
+  }
+  return none("code after the export boundary, but it does nothing privileged");
+}
+function candidateRanges(partition, fileText) {
+  if (!partition?.ok) return [];
+  return [
+    ...partition.shims.map((s) => ({ start: s.st.start, end: s.st.end, role: "shim" })),
+    ...payloadRanges(partition.payload, fileText)
+  ].sort((a2, b) => a2.start - b.start);
+}
+function payloadRanges(payload, fileText) {
+  if (payload.length === 0) return [];
+  const end = (fileText ?? "").length;
+  const last = payload[payload.length - 1].st;
+  const reachesEnd = last.end >= end - 1 || /^\s*$/.test((fileText ?? "").slice(last.end));
+  const ranges = [];
+  let run2 = null;
+  for (const p of payload) {
+    if (run2 && p.st.index === run2.lastIndex + 1) {
+      run2.end = p.st.end;
+      run2.lastIndex = p.st.index;
+      continue;
+    }
+    run2 = { start: p.st.start, end: p.st.end, lastIndex: p.st.index, role: "payload" };
+    ranges.push(run2);
+  }
+  if (reachesEnd && ranges.length) ranges[ranges.length - 1].end = end;
+  return ranges.map(({ start, end: e, role }) => ({ start, end: e, role }));
+}
+function describe(evidence, score, partition) {
+  const where = partition.anchor ? "appended after the last export" : "in an unbounded region";
+  const what = evidence.length ? evidence.join(", ") : "no distinguishing behaviour";
+  return `obfuscated code ${where}: ${what} (capability ${score.capability}, ${score.distinct} distinct, form ${score.form})`;
+}
+function findKnownVariant(text) {
+  return JS_VARIANTS.find(
+    (v) => text.includes(v.signature) && v.seeds.some((s) => text.includes(s))
+  ) ?? null;
+}
+function assessJsText(text, relPath) {
+  const dot = String(relPath ?? "").lastIndexOf(".");
+  const ext = dot >= 0 ? relPath.slice(dot) : "";
+  const lex = lexJs(text, { ext });
+  const partition = partitionTopLevel(text, lex);
+  const usable = lex.ok && partition.ok;
+  const payloadStmts = usable ? partition.payload.map((p) => p.st) : [];
+  let region;
+  let degraded = false;
+  if (!lex.ok) {
+    degraded = true;
+    region = {
+      start: 0,
+      end: text.length,
+      raw: text,
+      code: text,
+      literals: text,
+      comments: "",
+      bytes: text.length,
+      literalBodies: [],
+      specifiers: []
+    };
+  } else if (payloadStmts.length > 0) {
+    region = regionOfStatements(lex, payloadStmts);
+    if (region.end < text.length) region = regionOf(lex, region.start, text.length);
+  } else {
+    region = regionOf(lex, 0, 0);
+  }
+  const capability = { ...scoreCapabilities(region), degraded };
+  const form = scoreForm(region, text, { statements: payloadStmts });
+  const knownVariant = findKnownVariant(text);
+  const ranges = candidateRanges(partition, text);
+  let spliceOk = null;
+  let spliceReason = null;
+  let keptText = null;
+  if (usable && ranges.length > 0) {
+    const vs = verifySplice(text, ranges, {
+      lex,
+      ext,
+      expectExport: !!partition.anchor
+    });
+    spliceOk = vs.ok;
+    spliceReason = vs.reason ?? null;
+    keptText = vs.ok ? vs.kept : null;
+  }
+  const verdict = verdictForFile({
+    relPath,
+    fileText: text,
+    lex,
+    partition,
+    capability,
+    form,
+    knownVariantId: knownVariant?.id ?? null,
+    ranges,
+    spliceOk,
+    spliceReason
+  });
+  return { lex, partition, capability, form, knownVariant, verdict, ranges, keptText };
+}
+
 // src/scanner.js
 async function scanRepo(repoDir, opts = {}) {
   const findings = [];
@@ -1084,22 +2855,37 @@ async function scanRepo(repoDir, opts = {}) {
   await detectArtifacts(repoDir, findings, isExcluded);
   const coPresenceAmplified = existsSync(path3.join(repoDir, ".vscode", "tasks.json")) && existsSync(path3.join(repoDir, ".vscode", "launch.json")) && FONT_DIRS.some((d) => existsSync(path3.join(repoDir, d)));
   const hasContentConfirmed = findings.some((f) => f.contentConfirmed);
+  const hasAutoFixable = findings.some(
+    (f) => (f.contentConfirmed || f.autoFix) && f.action !== "manual-review"
+  );
   let severity = "clean";
   if (hasContentConfirmed) severity = "infected";
   else if (findings.length > 0 || coPresenceAmplified) severity = "suspicious";
   const manualReview = findings.filter((f) => f.action === "manual-review").map((f) => `${f.file}: ${f.description}`);
-  return { repoDir, severity, hasContentConfirmed, coPresenceAmplified, findings, manualReview };
+  return {
+    repoDir,
+    severity,
+    hasContentConfirmed,
+    hasAutoFixable,
+    coPresenceAmplified,
+    findings,
+    manualReview
+  };
 }
-function locatePayloadOffset(text, variant) {
-  let lastExport = -1;
-  const re = new RegExp(EXPORT_MARKER_RE.source, "g");
-  let m;
-  while (m = re.exec(text)) lastExport = m.index;
-  const from = lastExport >= 0 ? lastExport : 0;
-  const tailMatch = new RegExp(variant.startRe.source).exec(text.slice(from));
-  if (tailMatch) return from + tailMatch.index;
-  const anyMatch = new RegExp(variant.startRe.source).exec(text);
-  return anyMatch ? anyMatch.index : -1;
+function reportOffset(ranges) {
+  const payload = ranges.find((r) => r.role === "payload");
+  return (payload ?? ranges[0])?.start ?? -1;
+}
+function editFor(file, assessment) {
+  const { ranges, verdict } = assessment;
+  return {
+    absPath: file,
+    offset: reportOffset(ranges),
+    ranges: ranges.map(({ start, end, role }) => ({ start, end, role })),
+    variantId: assessment.knownVariant?.id,
+    scores: verdict.score,
+    blockers: verdict.blockers
+  };
 }
 async function detectJsPayloads(repoDir, findings, rel, isExcluded) {
   const files = await collectByExtension(repoDir, JS_EXTENSIONS);
@@ -1111,43 +2897,53 @@ async function detectJsPayloads(repoDir, findings, rel, isExcluded) {
     } catch {
       continue;
     }
-    let matchedKnown = false;
-    for (const variant of JS_VARIANTS) {
-      const confirmed = text.includes(variant.signature) && variant.seeds.some((s) => text.includes(s));
-      if (!confirmed) continue;
-      matchedKnown = true;
-      const offset = locatePayloadOffset(text, variant);
-      const canStrip = offset > 0;
+    const relPath = rel(file);
+    const assessment = assessJsText(text, relPath);
+    const v = assessment.verdict;
+    if (v.verdict === "none") continue;
+    const variant = assessment.knownVariant;
+    const prefix = variant ? `${variant.label} \u2014 ` : "";
+    if (v.verdict === "confirmed") {
       findings.push({
-        id: `js.payload.${variant.id}`,
+        id: variant ? `js.payload.${variant.id}` : "js.payload.injected",
         category: "js",
-        file: rel(file),
+        file: relPath,
         confidence: "high",
-        action: canStrip ? "strip-js-payload" : "manual-review",
+        action: "strip-js-payload",
         contentConfirmed: true,
-        description: canStrip ? `${variant.label} appended at offset ${offset} \u2014 will strip from there to EOF` : `${variant.label} detected but its start offset could not be located safely \u2014 strip manually`,
-        edit: canStrip ? { absPath: file, offset, variantId: variant.id } : void 0
+        description: `${prefix}${v.reason}`,
+        evidence: v.score,
+        edit: editFor(file, assessment)
       });
-      break;
+      continue;
     }
-    if (matchedKnown) continue;
-    let lastExport = -1;
-    const re = new RegExp(EXPORT_MARKER_RE.source, "g");
-    let m;
-    while (m = re.exec(text)) lastExport = m.index;
-    const tail = lastExport >= 0 ? text.slice(lastExport) : text;
-    const h2 = GENERIC_HEURISTIC;
-    if (h2.globalAssignRe.test(tail) && h2.obfArrayRe.test(tail) && h2.evalRe.test(tail)) {
+    if (v.verdict === "shim-only") {
       findings.push({
-        id: "js.payload.heuristic",
+        id: "js.shim.orphan",
         category: "js",
-        file: rel(file),
+        file: relPath,
         confidence: "low",
-        action: "manual-review",
+        action: "strip-js-payload",
         contentConfirmed: false,
-        description: "Obfuscated code appended after the last export (global[...] assignment + obfuscated array + eval). Possible unknown PolinRider variant \u2014 review manually."
+        // Residue from an earlier partial cleanup: removable, but not on its own
+        // grounds for calling a repo infected.
+        autoFix: true,
+        description: v.reason,
+        evidence: v.score,
+        edit: editFor(file, assessment)
       });
+      continue;
     }
+    findings.push({
+      id: variant ? `js.payload.${variant.id}` : assessment.capability.degraded ? "js.payload.unlexable" : "js.payload.suspect-tail",
+      category: "js",
+      file: relPath,
+      confidence: v.confidence,
+      action: "manual-review",
+      contentConfirmed: v.contentConfirmed,
+      description: `${prefix}${v.reason}`,
+      evidence: v.score
+    });
   }
 }
 function classifyVscodeEntry(entryValue) {
@@ -5835,13 +7631,13 @@ var logOutputSync = ({ serializedResult, fdNumber, state, verboseInfo, encoding,
   }
 };
 var writeToFiles = (serializedResult, stdioItems, outputFiles) => {
-  for (const { path: path12, append } of stdioItems.filter(({ type }) => FILE_TYPES.has(type))) {
-    const pathString = typeof path12 === "string" ? path12 : path12.toString();
+  for (const { path: path13, append } of stdioItems.filter(({ type }) => FILE_TYPES.has(type))) {
+    const pathString = typeof path13 === "string" ? path13 : path13.toString();
     if (append || outputFiles.has(pathString)) {
-      appendFileSync(path12, serializedResult);
+      appendFileSync(path13, serializedResult);
     } else {
       outputFiles.add(pathString);
-      writeFileSync(path12, serializedResult);
+      writeFileSync(path13, serializedResult);
     }
   }
 };
@@ -8385,27 +10181,46 @@ function recordModified(result, file) {
 function recordDeleted(result, file) {
   if (!result.filesDeleted.includes(file)) result.filesDeleted.push(file);
 }
+function rangesAgree(a2, b) {
+  if (!Array.isArray(a2) || !Array.isArray(b) || a2.length !== b.length) return false;
+  const key = (r) => `${r.start}:${r.end}:${r.role ?? ""}`;
+  const left = a2.map(key).sort();
+  const right = b.map(key).sort();
+  return left.every((k, i2) => k === right[i2]);
+}
 async function stripJsPayload(repoDir, f, result, dryRun) {
   const absPath = f.edit?.absPath ?? path9.join(repoDir, f.file);
+  const skip = (reason) => result.skipped.push({ finding: f, reason });
   let text;
   try {
     text = await fs4.readFile(absPath, "utf8");
   } catch {
-    result.skipped.push({ finding: f, reason: "file unreadable" });
-    return;
+    return skip("file unreadable");
   }
-  const variant = JS_VARIANTS.find((v) => v.id === f.edit?.variantId);
-  const offset = variant ? locatePayloadOffset(text, variant) : f.edit?.offset ?? -1;
-  if (!(offset > 0) || offset > text.length) {
-    result.skipped.push({ finding: f, reason: "could not locate payload start safely" });
-    return;
+  const assessment = assessJsText(text, f.file);
+  const v = assessment.verdict;
+  if (!assessment.lex.ok) {
+    return skip(`could not tokenize the file safely (${assessment.lex.reason}) \u2014 refusing to strip`);
   }
-  const kept = text.slice(0, offset).replace(/\s+$/, "");
-  if (kept.length === 0) {
-    result.skipped.push({ finding: f, reason: "stripping would empty the file" });
-    return;
+  if (v.verdict !== "confirmed" && v.verdict !== "shim-only") {
+    return skip(`re-verification says "${v.verdict}" \u2014 the file changed since the scan`);
   }
-  if (!dryRun) await fs4.writeFile(absPath, kept + "\n", "utf8");
+  if (assessment.ranges.length === 0) {
+    return skip("nothing to strip after re-verification");
+  }
+  if (assessment.ranges.some((r) => r.role !== "payload" && r.role !== "shim")) {
+    return skip("unrecognised edit role \u2014 refusing to strip");
+  }
+  if (f.edit?.ranges?.length && !rangesAgree(f.edit.ranges, assessment.ranges)) {
+    return skip("payload location moved since the scan \u2014 re-scan and retry");
+  }
+  const kept = assessment.keptText;
+  if (kept == null) {
+    return skip(`splice post-condition failed (${v.blockers.join(", ") || "unknown"})`);
+  }
+  if (kept.trim().length === 0) return skip("stripping would empty the file");
+  if (kept === text) return skip("no change");
+  if (!dryRun) await fs4.writeFile(absPath, kept, "utf8");
   result.applied.push(f);
   recordModified(result, f.file);
 }
@@ -8544,26 +10359,29 @@ function buildPrBody({ findings, result }) {
   return out.join("\n");
 }
 
-// src/sarif.js
+// src/lines.js
 import fs5 from "node:fs";
 import path10 from "node:path";
-var PROJECT_URL = "https://github.com/Innovative-VAS/polinrider-cleanup";
-var levelOf = (f) => f.contentConfirmed ? "error" : "warning";
-function lineFor(repoDir, f) {
-  const offset = f.edit?.offset;
+function findingStartLine(repoDir, finding) {
+  const offset = finding?.edit?.offset;
   if (!(offset > 0) || !repoDir) return 1;
   try {
-    const text = fs5.readFileSync(path10.join(repoDir, f.file), "utf8");
+    const text = fs5.readFileSync(path10.join(repoDir, finding.file), "utf8");
     if (offset > text.length) return 1;
     return text.slice(0, offset).split("\n").length;
   } catch {
     return 1;
   }
 }
+
+// src/sarif.js
+import path11 from "node:path";
+var PROJECT_URL = "https://github.com/Innovative-VAS/polinrider-cleanup";
+var levelOf = (f) => f.contentConfirmed ? "error" : "warning";
 function uriFor(repoRoot, repoDir, relFile) {
-  const abs = path10.join(repoDir || repoRoot, relFile);
-  const rel = path10.relative(repoRoot || repoDir, abs) || relFile;
-  return rel.split(path10.sep).join("/");
+  const abs = path11.join(repoDir || repoRoot, relFile);
+  const rel = path11.relative(repoRoot || repoDir, abs) || relFile;
+  return rel.split(path11.sep).join("/");
 }
 function buildSarif(findings, opts = {}) {
   const root = opts.repoRoot || opts.repoDir || findings.repoDir;
@@ -8589,7 +10407,7 @@ function buildSarif(findings, opts = {}) {
         {
           physicalLocation: {
             artifactLocation: { uri: uriFor(root, dir, f.file) },
-            region: { startLine: lineFor(dir, f) }
+            region: { startLine: findingStartLine(dir, f) }
           }
         }
       ],
@@ -8678,25 +10496,14 @@ function failThreshold(failOn) {
   if (failOn === "suspicious") return SEVERITY_RANK.suspicious;
   return SEVERITY_RANK.infected;
 }
-function findingLine(repoDir, f) {
-  const offset = f.edit?.offset;
-  if (!(offset > 0)) return 1;
-  try {
-    const text = fs6.readFileSync(path11.join(repoDir, f.file), "utf8");
-    if (offset > text.length) return 1;
-    return text.slice(0, offset).split("\n").length;
-  } catch {
-    return 1;
-  }
-}
 function annotationPath(workspace, repoDir, relFile) {
-  return path11.relative(workspace, path11.join(repoDir, relFile)) || relFile;
+  return path12.relative(workspace, path12.join(repoDir, relFile)) || relFile;
 }
 function emitAnnotations(workspace, repoDir, findings) {
   for (const f of findings.findings) {
     annotate(f.contentConfirmed ? "error" : "warning", {
       file: annotationPath(workspace, repoDir, f.file),
-      line: findingLine(repoDir, f),
+      line: findingStartLine(repoDir, f),
       title: f.contentConfirmed ? "PolinRider malware" : "PolinRider (review)",
       message: f.description
     });
@@ -8875,16 +10682,17 @@ async function run() {
     return 2;
   }
   const workspace = process.env.GITHUB_WORKSPACE || process.cwd();
-  const repoDir = path11.resolve(workspace, settings.scanPath);
+  const repoDir = path12.resolve(workspace, settings.scanPath);
   console.log(
-    `PolinRider scan \u2014 mode=${settings.mode} path=${path11.relative(workspace, repoDir) || "."}${settings.dryRun ? " (dry run)" : ""}`
+    `PolinRider scan \u2014 mode=${settings.mode} path=${path12.relative(workspace, repoDir) || "."}${settings.dryRun ? " (dry run)" : ""}`
   );
   const findings = await scanRepo(repoDir, { exclude: settings.exclude });
   emitAnnotations(workspace, repoDir, findings);
   let result = null;
   let prUrl = "";
   let changed = false;
-  if ((settings.mode === "fix" || settings.mode === "pr") && findings.severity === "infected") {
+  const shouldRemediate = findings.severity === "infected" || findings.hasAutoFixable === true;
+  if ((settings.mode === "fix" || settings.mode === "pr") && shouldRemediate) {
     result = await remediate(repoDir, findings, { dryRun: settings.dryRun });
     changed = result.changed;
     if (settings.mode === "fix" && (settings.commit || settings.amend) && !settings.dryRun && changed) {
@@ -8913,8 +10721,8 @@ async function run() {
   if (settings.sarifFile) {
     try {
       const sarif = buildSarif(findings, { repoRoot: workspace, repoDir });
-      const dest = path11.resolve(settings.sarifFile);
-      await fsp.mkdir(path11.dirname(dest), { recursive: true });
+      const dest = path12.resolve(settings.sarifFile);
+      await fsp.mkdir(path12.dirname(dest), { recursive: true });
       await fsp.writeFile(dest, JSON.stringify(sarif, null, 2));
       setOutput("sarif-file", settings.sarifFile);
     } catch (e) {
@@ -8948,7 +10756,7 @@ async function run() {
   );
   return code;
 }
-var invokedDirectly = process.argv[1] && path11.resolve(process.argv[1]) === fileURLToPath3(import.meta.url);
+var invokedDirectly = process.argv[1] && path12.resolve(process.argv[1]) === fileURLToPath3(import.meta.url);
 if (invokedDirectly) {
   run().then((code) => process.exit(code)).catch((err) => {
     console.log(`::error::${escData(err.message)}`);

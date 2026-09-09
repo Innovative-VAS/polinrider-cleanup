@@ -20,7 +20,7 @@ import fs from "node:fs/promises";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import * as sig from "./signatures.js";
-import { locatePayloadOffset } from "./scanner.js";
+import { assessJsText } from "./capability.js";
 import { safeGit } from "./safe-exec.js";
 
 /**
@@ -86,28 +86,61 @@ function recordDeleted(result, file) {
 
 // ─── strip-js-payload ────────────────────────────────────────────────────────────
 
+/** Two range lists describe the same edit. */
+function rangesAgree(a, b) {
+  if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
+  const key = (r) => `${r.start}:${r.end}:${r.role ?? ""}`;
+  const left = a.map(key).sort();
+  const right = b.map(key).sort();
+  return left.every((k, i) => k === right[i]);
+}
+
 async function stripJsPayload(repoDir, f, result, dryRun) {
   const absPath = f.edit?.absPath ?? path.join(repoDir, f.file);
+  const skip = (reason) => result.skipped.push({ finding: f, reason });
+
   let text;
   try {
     text = await fs.readFile(absPath, "utf8");
   } catch {
-    result.skipped.push({ finding: f, reason: "file unreadable" });
-    return;
+    return skip("file unreadable");
   }
-  // Re-locate against current content rather than trusting the stored offset.
-  const variant = sig.JS_VARIANTS.find((v) => v.id === f.edit?.variantId);
-  const offset = variant ? locatePayloadOffset(text, variant) : f.edit?.offset ?? -1;
-  if (!(offset > 0) || offset > text.length) {
-    result.skipped.push({ finding: f, reason: "could not locate payload start safely" });
-    return;
+
+  // Re-derive the ENTIRE plan from the current bytes rather than trusting the
+  // offsets recorded at scan time. This preserves the property that a stale
+  // finding can never truncate the wrong thing, and is strictly stronger than
+  // re-running a regex: the tokenizer, the position gate, the capability score
+  // and the splice post-condition all have to agree again, now.
+  const assessment = assessJsText(text, f.file);
+  const v = assessment.verdict;
+
+  if (!assessment.lex.ok) {
+    return skip(`could not tokenize the file safely (${assessment.lex.reason}) — refusing to strip`);
   }
-  const kept = text.slice(0, offset).replace(/\s+$/, "");
-  if (kept.length === 0) {
-    result.skipped.push({ finding: f, reason: "stripping would empty the file" });
-    return;
+  if (v.verdict !== "confirmed" && v.verdict !== "shim-only") {
+    return skip(`re-verification says "${v.verdict}" — the file changed since the scan`);
   }
-  if (!dryRun) await fs.writeFile(absPath, kept + "\n", "utf8");
+  if (assessment.ranges.length === 0) {
+    return skip("nothing to strip after re-verification");
+  }
+  // Only appended payloads and prepended shims are auto-strippable.
+  if (assessment.ranges.some((r) => r.role !== "payload" && r.role !== "shim")) {
+    return skip("unrecognised edit role — refusing to strip");
+  }
+  if (f.edit?.ranges?.length && !rangesAgree(f.edit.ranges, assessment.ranges)) {
+    return skip("payload location moved since the scan — re-scan and retry");
+  }
+
+  // keptText is non-null only when verifySplice succeeded, which already
+  // guarantees the result re-tokenizes, keeps its export, and is not empty.
+  const kept = assessment.keptText;
+  if (kept == null) {
+    return skip(`splice post-condition failed (${v.blockers.join(", ") || "unknown"})`);
+  }
+  if (kept.trim().length === 0) return skip("stripping would empty the file");
+  if (kept === text) return skip("no change");
+
+  if (!dryRun) await fs.writeFile(absPath, kept, "utf8");
   result.applied.push(f);
   recordModified(result, f.file);
 }
